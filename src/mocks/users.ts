@@ -110,4 +110,25 @@ export const MOCK_USERS: Array<User & { password: string; email: string }> = [
     regionCode: 'RMC-01',
     hospitalId: 'h-vitoria',
   },
+  // UPA NIR users
+  {
+    id: 'nir-upa-boa-vista',
+    name: 'NIR UPA Boa Vista',
+    email: 'nir@upa-boavista.curitiba.pr.gov.br',
+    password: 'nir2024',
+    role: 'hospital_nir',
+    initials: 'BV',
+    regionCode: 'RMC-01',
+    hospitalId: 'upa-boa-vista',
+  },
+  {
+    id: 'nir-upa-cajuru',
+    name: 'NIR UPA Cajuru',
+    email: 'nir@upa-cajuru.curitiba.pr.gov.br',
+    password: 'nir2024',
+    role: 'hospital_nir',
+    initials: 'UC',
+    regionCode: 'RMC-01',
+    hospitalId: 'upa-cajuru',
+  },
 ];
