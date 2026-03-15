@@ -1,0 +1,1687 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SIREME | Sistema Inteligente de Regulação e Encaminhamento Médico Emergencial</title>
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet" />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              display: ['Sora', 'sans-serif'],
+              body: ['DM Sans', 'sans-serif'],
+            },
+            boxShadow: {
+              glow: '0 0 0 1px rgba(56,189,248,0.18), 0 20px 80px rgba(15,23,42,0.5)',
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      body {
+        margin: 0;
+        font-family: 'DM Sans', sans-serif;
+        background:
+          radial-gradient(circle at top, rgba(14,165,233,0.15), transparent 34%),
+          radial-gradient(circle at right, rgba(16,185,129,0.1), transparent 24%),
+          linear-gradient(180deg, #020617 0%, #06101f 100%);
+        color: #e2e8f0;
+      }
+
+      .leaflet-container {
+        background: #020617;
+        border-radius: 1rem;
+        font-family: 'DM Sans', sans-serif;
+      }
+
+      .sireme-popup .leaflet-popup-content-wrapper {
+        background: #0f172a;
+        color: #e2e8f0;
+        border: 1px solid rgba(148, 163, 184, 0.2);
+      }
+
+      .sireme-popup .leaflet-popup-tip {
+        background: #0f172a;
+      }
+
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+
+      ::-webkit-scrollbar-thumb {
+        background: rgba(100, 116, 139, 0.6);
+        border-radius: 999px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
+
+    <script type="text/babel" data-presets="env,react">
+      const { useEffect, useMemo, useRef, useState } = React;
+
+      const STORAGE_KEYS = {
+        session: 'sireme_session_browser',
+        cases: 'sireme_cases_browser',
+      };
+
+      const USERS = [
+        {
+          id: 'user-1',
+          name: 'Dr. Ricardo Silva',
+          email: 'r.silva@samu-cwb.gov.br',
+          password: 'sireme2024',
+          role: 'Médico Regulador',
+          initials: 'RS',
+          regionCode: 'Curitiba-PR',
+        },
+        {
+          id: 'user-2',
+          name: 'Enf. Carla Santos',
+          email: 'c.santos@samu-cwb.gov.br',
+          password: 'sireme2024',
+          role: 'Reguladora',
+          initials: 'CS',
+          regionCode: 'Curitiba-PR',
+        },
+      ];
+
+      const RESOURCE_LABELS = {
+        UTI_ADULTO: 'UTI Adulto',
+        UTI_PEDIATRICA: 'UTI Pediátrica',
+        UTI_NEONATAL: 'UTI Neonatal',
+        HEMODINAMICA: 'Hemodinâmica',
+        NEUROCIRURGIA: 'Neurocirurgia',
+        CIRURGIA_VASCULAR: 'Cirurgia Vascular',
+        MATERNIDADE: 'Maternidade',
+        BANCO_DE_SANGUE: 'Banco de Sangue',
+        TOMOGRAFIA: 'Tomografia',
+        RESSONANCIA: 'Ressonância',
+        TRAUMA: 'Trauma',
+        PEDIATRIA: 'Pediatria',
+        CARDIOLOGIA: 'Cardiologia',
+        NEUROLOGIA: 'Neurologia',
+        ORTOPEDIA: 'Ortopedia',
+        DIALISE: 'Diálise',
+        ENDOSCOPIA: 'Endoscopia',
+        CIRURGIA_GERAL: 'Cirurgia Geral',
+      };
+
+      const CATEGORY_LABELS = {
+        cardiologico: 'Cardiológico',
+        neurologico: 'Neurológico',
+        trauma: 'Trauma',
+        infeccioso: 'Infeccioso',
+        obstetrico: 'Obstétrico',
+        pediatrico: 'Pediátrico',
+        clinico_geral: 'Clínico Geral',
+      };
+
+      const CARE_LINE_LABELS = {
+        linha_cardio: 'Linha Cardio',
+        linha_neuro: 'Linha AVC / Neuro',
+        linha_trauma: 'Linha Trauma',
+        linha_infeccao: 'Linha Sepse / Infecção',
+        linha_materno_infantil: 'Linha Materno-Infantil',
+        linha_pediatrica: 'Linha Pediátrica',
+        linha_clinica: 'Linha Clínica Geral',
+      };
+
+      const GRAVITY_LABELS = {
+        critico: 'Crítico',
+        alto: 'Alto',
+        moderado: 'Moderado',
+        baixo: 'Baixo',
+      };
+
+      const TRIAGE_OPTIONS = [
+        ['dor_toracica_isquemica', 'Dor torácica isquêmica'],
+        ['deficit_focal_agudo', 'Déficit focal agudo'],
+        ['insuficiencia_respiratoria', 'Insuficiência respiratória'],
+        ['choque_hipotensivo', 'Choque / hipotensão'],
+        ['politrauma_mecanismo', 'Politrauma / mecanismo maior'],
+        ['gestante_alto_risco', 'Gestante alto risco'],
+        ['sepse_provavel', 'Sepse provável'],
+        ['crianca_risco', 'Criança em risco'],
+      ];
+
+      const CURITIBA_ORIGINS = [
+        { name: 'Base SAMU Central — Centro', lat: -25.4296, lng: -49.2719 },
+        { name: 'Base SAMU Leste — Cajuru', lat: -25.4239, lng: -49.2294 },
+        { name: 'Base SAMU Sul — Boqueirão', lat: -25.48, lng: -49.24 },
+        { name: 'Base SAMU Oeste — CIC', lat: -25.465, lng: -49.35 },
+        { name: 'UPA Cajuru', lat: -25.43, lng: -49.235 },
+        { name: 'UPA Boqueirão', lat: -25.48, lng: -49.24 },
+        { name: 'Bairro Água Verde', lat: -25.45, lng: -49.29 },
+        { name: 'São José dos Pinhais', lat: -25.5312, lng: -49.2078 },
+      ];
+
+      const HOSPITALS = [
+        {
+          id: 'hc-ufpr',
+          name: 'Hospital de Clínicas da UFPR',
+          shortName: 'HC-UFPR',
+          type: 'hospital',
+          neighborhood: 'Alto da Glória',
+          address: 'Rua General Carneiro, 181',
+          lat: -25.4186,
+          lng: -49.2667,
+          resources: ['UTI_ADULTO', 'UTI_PEDIATRICA', 'HEMODINAMICA', 'NEUROCIRURGIA', 'TRAUMA', 'BANCO_DE_SANGUE', 'TOMOGRAFIA', 'RESSONANCIA', 'CIRURGIA_GERAL', 'CARDIOLOGIA', 'NEUROLOGIA', 'ORTOPEDIA', 'DIALISE', 'ENDOSCOPIA', 'CIRURGIA_VASCULAR'],
+          offers: ['Hemodinâmica 24h', 'AVC com imagem avançada', 'Trauma de alta complexidade', 'Banco de sangue', 'Diálise e retaguarda intensiva'],
+          badges: ['Centro de Referência', 'Hospital Universitário', 'Trauma IV'],
+          cnes: '2773651',
+          totalBeds: 643,
+          icuBeds: 72,
+          occupancyPercent: 78,
+          loadFactor: 8,
+          baseScore: 98,
+          phone: '(41) 3360-1800',
+          regulationNotes: 'Destino premium para casos de alta complexidade e múltiplos recursos obrigatórios.',
+        },
+        {
+          id: 'h-trabalhador',
+          name: 'Hospital do Trabalhador',
+          shortName: 'H. Trabalhador',
+          type: 'hospital',
+          neighborhood: 'Novo Mundo',
+          address: 'Av. República Argentina, 4406',
+          lat: -25.4378,
+          lng: -49.2561,
+          resources: ['UTI_ADULTO', 'TRAUMA', 'BANCO_DE_SANGUE', 'TOMOGRAFIA', 'NEUROCIRURGIA', 'ORTOPEDIA', 'CIRURGIA_GERAL'],
+          offers: ['Sala de trauma', 'Neurocirurgia de emergência', 'Ortopedia complexa', 'Banco de sangue'],
+          badges: ['Referência Trauma', 'SAMU Curitiba'],
+          cnes: '2773660',
+          totalBeds: 322,
+          icuBeds: 30,
+          occupancyPercent: 62,
+          loadFactor: 7,
+          baseScore: 88,
+          phone: '(41) 3271-3000',
+          regulationNotes: 'Preferencial para politrauma, trauma maior e neurotrauma.',
+        },
+        {
+          id: 'h-evangelico',
+          name: 'Hospital Universitário Evangélico Mackenzie',
+          shortName: 'H. Evangélico',
+          type: 'hospital',
+          neighborhood: 'Bigorrilho',
+          address: 'Rua Augusto Stellfeld, 1908',
+          lat: -25.4219,
+          lng: -49.2831,
+          resources: ['UTI_ADULTO', 'HEMODINAMICA', 'CARDIOLOGIA', 'TOMOGRAFIA', 'RESSONANCIA', 'CIRURGIA_GERAL', 'BANCO_DE_SANGUE', 'DIALISE', 'NEUROLOGIA', 'ENDOSCOPIA'],
+          offers: ['IAM com supra', 'Cardiologia intervencionista', 'Neurologia aguda', 'Diálise'],
+          badges: ['Referência Cardio', 'Hemodinâmica 24h', 'AVC'],
+          cnes: '2773678',
+          totalBeds: 289,
+          icuBeds: 40,
+          occupancyPercent: 55,
+          loadFactor: 6,
+          baseScore: 90,
+          phone: '(41) 3240-5000',
+          regulationNotes: 'Boa aderência para linha cardio e AVC com necessidade de imagem rápida.',
+        },
+        {
+          id: 'h-cajuru',
+          name: 'Hospital Universitário Cajuru',
+          shortName: 'HU Cajuru',
+          type: 'hospital',
+          neighborhood: 'Cajuru',
+          address: 'Av. São José, 300',
+          lat: -25.4239,
+          lng: -49.2294,
+          resources: ['UTI_ADULTO', 'UTI_PEDIATRICA', 'TRAUMA', 'NEUROCIRURGIA', 'TOMOGRAFIA', 'BANCO_DE_SANGUE', 'CIRURGIA_GERAL', 'ORTOPEDIA'],
+          offers: ['Trauma severo', 'Neurocirurgia', 'Cirurgia geral 24h', 'UTI adulto e pediátrica'],
+          badges: ['Trauma Severo', 'Norte/Leste'],
+          cnes: '2773694',
+          totalBeds: 234,
+          icuBeds: 28,
+          occupancyPercent: 91,
+          loadFactor: 9,
+          baseScore: 82,
+          phone: '(41) 3271-3730',
+          regulationNotes: 'Alta aderência a trauma e neurocirurgia, porém sensível à superlotação.',
+        },
+        {
+          id: 'h-pequeno-principe',
+          name: 'Hospital Pequeno Príncipe',
+          shortName: 'Pequeno Príncipe',
+          type: 'hospital',
+          neighborhood: 'Água Verde',
+          address: 'Rua Desembargador Motta, 1070',
+          lat: -25.4378,
+          lng: -49.27,
+          resources: ['UTI_PEDIATRICA', 'UTI_NEONATAL', 'PEDIATRIA', 'CIRURGIA_GERAL', 'TOMOGRAFIA', 'BANCO_DE_SANGUE', 'RESSONANCIA'],
+          offers: ['Pediatria intensiva', 'UTI neonatal', 'Cardiologia pediátrica'],
+          badges: ['Referência Pediátrica', 'UTI Neo'],
+          cnes: '2773708',
+          totalBeds: 365,
+          icuBeds: 45,
+          occupancyPercent: 80,
+          loadFactor: 4,
+          baseScore: 95,
+          phone: '(41) 3310-1500',
+          regulationNotes: 'Referência pediátrica e neonatal da rede.',
+        },
+        {
+          id: 'maternidade-vfa',
+          name: 'Maternidade Victor Ferreira do Amaral',
+          shortName: 'Mat. VFA',
+          type: 'hospital',
+          neighborhood: 'Cajuru',
+          address: 'Av. Presidente Affonso Camargo, 2250',
+          lat: -25.4108,
+          lng: -49.2389,
+          resources: ['MATERNIDADE', 'UTI_NEONATAL', 'UTI_ADULTO', 'BANCO_DE_SANGUE', 'TOMOGRAFIA'],
+          offers: ['Obstetrícia de alto risco', 'Centro obstétrico SUS', 'UTI neonatal'],
+          badges: ['Alto Risco Obstétrico', 'UTI Neo'],
+          cnes: '2773716',
+          totalBeds: 155,
+          icuBeds: 18,
+          occupancyPercent: 58,
+          loadFactor: 3,
+          baseScore: 85,
+          phone: '(41) 3276-2200',
+          regulationNotes: 'Preferencial para gestantes de alto risco e demanda neonatal associada.',
+        },
+        {
+          id: 'upa-cajuru',
+          name: 'UPA 24h Cajuru',
+          shortName: 'UPA Cajuru',
+          type: 'upa',
+          neighborhood: 'Cajuru',
+          address: 'Rua Eng. Benedito Mário da Silva, 555',
+          lat: -25.43,
+          lng: -49.235,
+          resources: ['TOMOGRAFIA', 'CIRURGIA_GERAL', 'BANCO_DE_SANGUE'],
+          offers: ['Estabilização', 'Sala de observação', 'Tomografia local'],
+          badges: ['UPA 24h', 'Leste'],
+          cnes: '6716651',
+          totalBeds: 36,
+          icuBeds: 0,
+          occupancyPercent: 75,
+          loadFactor: 6,
+          baseScore: 50,
+          phone: '(41) 3082-5700',
+          regulationNotes: 'Boa porta de estabilização local, não indicada como destino definitivo de alta complexidade.',
+        },
+        {
+          id: 'upa-boqueirao',
+          name: 'UPA 24h Boqueirão',
+          shortName: 'UPA Boqueirão',
+          type: 'upa',
+          neighborhood: 'Boqueirão',
+          address: 'Av. Marechal Floriano Peixoto, 7742',
+          lat: -25.48,
+          lng: -49.24,
+          resources: ['TOMOGRAFIA', 'CIRURGIA_GERAL'],
+          offers: ['Estabilização', 'Sala vermelha', 'Tomografia'],
+          badges: ['UPA 24h', 'Sul'],
+          cnes: '6716678',
+          totalBeds: 36,
+          icuBeds: 0,
+          occupancyPercent: 45,
+          loadFactor: 3,
+          baseScore: 52,
+          phone: '(41) 3082-5760',
+          regulationNotes: 'Boa cobertura da rede sul para primeiros cuidados e reavaliação.',
+        },
+        {
+          id: 'upa-fazendinha',
+          name: 'UPA 24h Fazendinha',
+          shortName: 'UPA Fazendinha',
+          type: 'upa',
+          neighborhood: 'Fazendinha',
+          address: 'Rua Carlos Klemtz, 1880',
+          lat: -25.4758,
+          lng: -49.3117,
+          resources: ['TOMOGRAFIA', 'CIRURGIA_GERAL'],
+          offers: ['Estabilização', 'Observação adulto', 'Tomografia'],
+          badges: ['UPA 24h', 'CIC/Fazendinha'],
+          cnes: '6716660',
+          totalBeds: 32,
+          icuBeds: 0,
+          occupancyPercent: 60,
+          loadFactor: 4,
+          baseScore: 48,
+          phone: '(41) 3082-5750',
+          regulationNotes: 'Adequada para avaliação inicial e estabilização de curto prazo.',
+        },
+      ];
+
+      const SIMULATION_CASES = [
+        {
+          id: 'sim-001',
+          title: 'IAM com Supra de ST',
+          subtitle: 'Cardiológico crítico',
+          icon: '❤️',
+          expectedCategory: 'Cardiológico',
+          expectedGravity: 'Crítico',
+          data: {
+            patientId: 'SIM-001-A',
+            regulationCode: 'REDS-CTBA-001',
+            age: 62,
+            sex: 'M',
+            origin: 'Base SAMU Central — Centro',
+            originLat: -25.4296,
+            originLng: -49.2719,
+            transportType: 'USA',
+            caseType: 'pre_hospitalar',
+            chiefComplaint: 'Dor precordial intensa irradiando para braço esquerdo.',
+            clinicalSuspicion: 'IAM com supra de ST em parede anterior.',
+            vitalSigns: { pressuraSistolica: 82, frequenciaCardiaca: 118, saturacaoO2: 89, glasgow: 14 },
+            consciousnessLevel: 'confuso',
+            triageTags: ['dor_toracica_isquemica', 'choque_hipotensivo'],
+            observations: 'ECG positivo, janela de reperfusão curta.',
+            requiredResources: ['HEMODINAMICA'],
+            desiredResources: ['CARDIOLOGIA'],
+            freeNotes: 'Prioridade máxima.',
+          },
+        },
+        {
+          id: 'sim-002',
+          title: 'AVC em janela terapêutica',
+          subtitle: 'Neurológico alto',
+          icon: '🧠',
+          expectedCategory: 'Neurológico',
+          expectedGravity: 'Alto',
+          data: {
+            patientId: 'SIM-002-B',
+            regulationCode: 'REDS-CTBA-002',
+            age: 71,
+            sex: 'F',
+            origin: 'Bairro Água Verde',
+            originLat: -25.45,
+            originLng: -49.29,
+            transportType: 'USB',
+            caseType: 'pre_hospitalar',
+            chiefComplaint: 'Hemiplegia direita e afasia súbita.',
+            clinicalSuspicion: 'AVC isquêmico em janela para trombólise.',
+            vitalSigns: { pressuraSistolica: 178, frequenciaCardiaca: 88, saturacaoO2: 94, glasgow: 12 },
+            consciousnessLevel: 'confuso',
+            triageTags: ['deficit_focal_agudo'],
+            observations: 'Início há 1h45.',
+            requiredResources: ['TOMOGRAFIA', 'NEUROLOGIA'],
+            desiredResources: ['NEUROCIRURGIA'],
+            freeNotes: '',
+          },
+        },
+        {
+          id: 'sim-003',
+          title: 'Politrauma grave',
+          subtitle: 'Trauma crítico',
+          icon: '🚑',
+          expectedCategory: 'Trauma',
+          expectedGravity: 'Crítico',
+          data: {
+            patientId: 'SIM-003-C',
+            regulationCode: 'REDS-CTBA-003',
+            age: 29,
+            sex: 'M',
+            origin: 'Base SAMU Leste — Cajuru',
+            originLat: -25.4239,
+            originLng: -49.2294,
+            transportType: 'USA',
+            caseType: 'pre_hospitalar',
+            chiefComplaint: 'Colisão frontal com ejeção do veículo.',
+            clinicalSuspicion: 'Politrauma com TCE grave e fratura instável de bacia.',
+            vitalSigns: { pressuraSistolica: 74, frequenciaCardiaca: 138, saturacaoO2: 87, glasgow: 7 },
+            consciousnessLevel: 'soporoso',
+            triageTags: ['politrauma_mecanismo', 'choque_hipotensivo', 'insuficiencia_respiratoria'],
+            observations: 'FAST positivo.',
+            requiredResources: ['TRAUMA', 'BANCO_DE_SANGUE'],
+            desiredResources: ['ORTOPEDIA', 'CIRURGIA_VASCULAR'],
+            freeNotes: '',
+          },
+        },
+        {
+          id: 'sim-004',
+          title: 'Sepse com hipotensão',
+          subtitle: 'Infeccioso alto',
+          icon: '🦠',
+          expectedCategory: 'Infeccioso',
+          expectedGravity: 'Alto',
+          data: {
+            patientId: 'SIM-004-D',
+            regulationCode: 'REDS-CTBA-004',
+            age: 78,
+            sex: 'F',
+            origin: 'UPA Boqueirão',
+            originLat: -25.48,
+            originLng: -49.24,
+            transportType: 'USB',
+            caseType: 'transferencia',
+            chiefComplaint: 'Febre, oligúria e rebaixamento do nível de consciência.',
+            clinicalSuspicion: 'Choque séptico de foco urinário.',
+            vitalSigns: { pressuraSistolica: 78, frequenciaCardiaca: 122, saturacaoO2: 91, temperatura: 38.9, glasgow: 13 },
+            consciousnessLevel: 'confuso',
+            triageTags: ['sepse_provavel', 'choque_hipotensivo'],
+            observations: 'Uso de noradrenalina em bomba.',
+            requiredResources: ['UTI_ADULTO'],
+            desiredResources: ['DIALISE'],
+            freeNotes: '',
+          },
+        },
+        {
+          id: 'sim-005',
+          title: 'Gestante alto risco',
+          subtitle: 'Obstétrico alto',
+          icon: '🤱',
+          expectedCategory: 'Obstétrico',
+          expectedGravity: 'Alto',
+          data: {
+            patientId: 'SIM-005-E',
+            regulationCode: 'REDS-CTBA-005',
+            age: 26,
+            sex: 'F',
+            origin: 'Base SAMU Sul — Boqueirão',
+            originLat: -25.48,
+            originLng: -49.24,
+            transportType: 'USA',
+            caseType: 'pre_hospitalar',
+            chiefComplaint: 'Gestante com cefaleia intensa, escotomas e convulsão.',
+            clinicalSuspicion: 'Eclâmpsia com risco materno-fetal.',
+            vitalSigns: { pressuraSistolica: 182, frequenciaCardiaca: 104, saturacaoO2: 95, glasgow: 13 },
+            consciousnessLevel: 'confuso',
+            triageTags: ['gestante_alto_risco'],
+            observations: 'Uso de sulfato de magnésio.',
+            requiredResources: ['MATERNIDADE', 'UTI_NEONATAL'],
+            desiredResources: ['UTI_ADULTO'],
+            freeNotes: '',
+          },
+        },
+      ];
+
+      const NIR_REQUESTS = [
+        { id: 'nir-001', patientCode: 'REDS-CTBA-1842', originUnit: 'UPA Boqueirão', resource: 'UTI_ADULTO', priority: 'Crítica', status: 'Contato em andamento', notes: 'Noradrenalina em bomba e necessidade de ventilação.' },
+        { id: 'nir-002', patientCode: 'REDS-CTBA-1846', originUnit: 'UPA Cajuru', resource: 'NEUROCIRURGIA', priority: 'Alta', status: 'Aguardando aceite', notes: 'TCE grave com potencial abordagem cirúrgica.' },
+        { id: 'nir-003', patientCode: 'REDS-CTBA-1854', originUnit: 'Maternidade Bairro Novo', resource: 'UTI_NEONATAL', priority: 'Alta', status: 'Aceite parcial', notes: 'Prematuridade extrema com gemelaridade.' },
+      ];
+
+      const NAV_ITEMS = [
+        ['dashboard', 'Dashboard'],
+        ['new-case', 'Novo Caso'],
+        ['hospitals', 'Hospitais'],
+        ['nir', 'NIR / Leitos'],
+        ['history', 'Histórico'],
+        ['simulation', 'Simulação'],
+      ];
+
+      function formatDuration(ms) {
+        const seconds = Math.max(1, Math.round(ms / 1000));
+        const minutes = Math.floor(seconds / 60);
+        return minutes > 0 ? `${minutes}min ${seconds % 60}s` : `${seconds}s`;
+      }
+
+      function formatTime(value) {
+        return new Date(value).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      }
+
+      function generateCaseId() {
+        return `REG-${Math.floor(1000 + Math.random() * 9000)}`;
+      }
+
+      function gravityTone(gravity) {
+        return {
+          critico: 'bg-red-500/15 text-red-300 border-red-500/30',
+          alto: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
+          moderado: 'bg-sky-500/15 text-sky-300 border-sky-500/30',
+          baixo: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
+        }[gravity];
+      }
+
+      function getSnapshot(hospital, seed = Date.now()) {
+        const bucket = Math.floor(seed / 60000);
+        const wave = Math.sin((bucket + hospital.loadFactor) / 2.4) * 7;
+        const pulse = Math.cos((bucket + hospital.loadFactor) / 3.2) * 4;
+        const occupancyPercent = Math.max(28, Math.min(98, Math.round(hospital.occupancyPercent + wave + pulse)));
+        const occupancy =
+          occupancyPercent >= 90 ? 'critica' :
+          occupancyPercent >= 75 ? 'alta' :
+          occupancyPercent >= 55 ? 'media' : 'baixa';
+        return {
+          occupancyPercent,
+          occupancy,
+          availableBeds: Math.max(0, Math.round(hospital.totalBeds * (100 - occupancyPercent) / 100)),
+          emergencyQueue: Math.max(1, Math.round(occupancyPercent / 12) + hospital.loadFactor),
+          statusLabel:
+            occupancy === 'critica' ? 'Fluxo tensionado' :
+            occupancy === 'alta' ? 'Capacidade monitorada' :
+            occupancy === 'media' ? 'Operação estável' : 'Boa disponibilidade',
+        };
+      }
+
+      function classifyCase(form) {
+        const text = `${form.chiefComplaint} ${form.clinicalSuspicion} ${form.observations}`.toLowerCase();
+        let score = 0;
+        const v = form.vitalSigns || {};
+        const tags = new Set(form.triageTags || []);
+
+        if (form.consciousnessLevel === 'inconsciente') score += 4;
+        if (form.consciousnessLevel === 'soporoso') score += 3;
+        if (form.consciousnessLevel === 'confuso') score += 2;
+        if ((v.glasgow || 15) <= 8) score += 4;
+        if ((v.saturacaoO2 || 99) < 90) score += 3;
+        if ((v.pressuraSistolica || 120) < 90) score += 3;
+        if ((v.frequenciaCardiaca || 80) > 130) score += 2;
+        if (tags.has('choque_hipotensivo')) score += 3;
+        if (tags.has('insuficiencia_respiratoria')) score += 3;
+        if (tags.has('politrauma_mecanismo')) score += 3;
+        if (tags.has('dor_toracica_isquemica')) score += 2;
+        if (tags.has('deficit_focal_agudo')) score += 2;
+        if (tags.has('sepse_provavel')) score += 2;
+        if (tags.has('gestante_alto_risco')) score += 2;
+
+        const gravity = score >= 8 ? 'critico' : score >= 5 ? 'alto' : score >= 2 ? 'moderado' : 'baixo';
+
+        let category = 'clinico_geral';
+        if (form.age < 14) category = 'pediatrico';
+        else if (tags.has('gestante_alto_risco') || /gesta|eclamp|parto/.test(text)) category = 'obstetrico';
+        else if (tags.has('politrauma_mecanismo') || /trauma|colis|fratura|tce/.test(text)) category = 'trauma';
+        else if (tags.has('deficit_focal_agudo') || /avc|afasia|hemipleg/.test(text)) category = 'neurologico';
+        else if (tags.has('dor_toracica_isquemica') || /iam|infarto|precordial|torácica/.test(text)) category = 'cardiologico';
+        else if (tags.has('sepse_provavel') || /sepse|infecc|choque sépt/.test(text)) category = 'infeccioso';
+
+        const careLine = {
+          cardiologico: 'linha_cardio',
+          neurologico: 'linha_neuro',
+          trauma: 'linha_trauma',
+          infeccioso: 'linha_infeccao',
+          obstetrico: 'linha_materno_infantil',
+          pediatrico: 'linha_pediatrica',
+          clinico_geral: 'linha_clinica',
+        }[category];
+
+        const resourceMap = {
+          cardiologico: { required: ['CARDIOLOGIA'], desired: ['HEMODINAMICA', 'UTI_ADULTO', 'TOMOGRAFIA'] },
+          neurologico: { required: ['TOMOGRAFIA', 'NEUROLOGIA'], desired: ['NEUROCIRURGIA', 'UTI_ADULTO'] },
+          trauma: { required: ['TRAUMA', 'BANCO_DE_SANGUE', 'TOMOGRAFIA'], desired: ['NEUROCIRURGIA', 'ORTOPEDIA', 'UTI_ADULTO'] },
+          infeccioso: { required: ['BANCO_DE_SANGUE'], desired: ['UTI_ADULTO', 'DIALISE'] },
+          obstetrico: { required: ['MATERNIDADE', 'BANCO_DE_SANGUE'], desired: ['UTI_NEONATAL', 'UTI_ADULTO'] },
+          pediatrico: { required: ['PEDIATRIA'], desired: ['UTI_PEDIATRICA', 'BANCO_DE_SANGUE', 'TOMOGRAFIA'] },
+          clinico_geral: { required: [], desired: ['UTI_ADULTO', 'TOMOGRAFIA'] },
+        };
+
+        const requiredResources = [...new Set([...(resourceMap[category].required || []), ...(form.requiredResources || [])])];
+        const desiredResources = [...new Set([...(resourceMap[category].desired || []), ...(form.desiredResources || [])])]
+          .filter((item) => !requiredResources.includes(item));
+
+        if ((gravity === 'critico' || gravity === 'alto') && !requiredResources.includes('UTI_ADULTO') && category !== 'obstetrico' && category !== 'pediatrico') {
+          requiredResources.push('UTI_ADULTO');
+        }
+        if (gravity === 'critico' && category === 'cardiologico' && !requiredResources.includes('HEMODINAMICA')) requiredResources.push('HEMODINAMICA');
+        if (gravity === 'critico' && category === 'neurologico' && !requiredResources.includes('NEUROCIRURGIA')) requiredResources.push('NEUROCIRURGIA');
+        if (gravity === 'critico' && category === 'trauma' && !requiredResources.includes('CIRURGIA_GERAL')) requiredResources.push('CIRURGIA_GERAL');
+
+        const alerts = [];
+        if (gravity === 'critico') alerts.push({ level: 'critical', message: 'Caso crítico. Prioridade máxima de aceite e transporte.' });
+        if ((v.saturacaoO2 || 99) < 90) alerts.push({ level: 'critical', message: `SpO₂ ${v.saturacaoO2}% — risco respiratório importante.` });
+        if ((v.pressuraSistolica || 120) < 90) alerts.push({ level: 'critical', message: `PA sistólica ${v.pressuraSistolica} mmHg — hipotensão grave.` });
+        if (category === 'cardiologico') alerts.push({ level: 'warning', message: 'Linha cardio: considerar hemodinâmica e menor tempo de transporte.' });
+        if (category === 'neurologico') alerts.push({ level: 'warning', message: 'Linha AVC: priorizar tomografia e janela terapêutica.' });
+        if (category === 'obstetrico') alerts.push({ level: 'warning', message: 'Caso obstétrico: direcionar para maternidade com retaguarda neonatal.' });
+        if (category === 'pediatrico') alerts.push({ level: 'warning', message: 'Caso pediátrico: evitar unidades sem pediatria/UTI pediátrica.' });
+
+        return { gravity, category, careLine, requiredResources, desiredResources, alerts };
+      }
+
+      function haversineKm(lat1, lng1, lat2, lng2) {
+        const R = 6371;
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLng = (lng2 - lng1) * Math.PI / 180;
+        const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      }
+
+      function runRecommendationEngine(form, classification, hospitals) {
+        const excluded = [];
+        const eligible = [];
+
+        hospitals.forEach((hospital) => {
+          const snapshot = getSnapshot(hospital);
+          const distanceKm = haversineKm(form.originLat, form.originLng, hospital.lat, hospital.lng);
+          const missing = classification.requiredResources.filter((item) => !hospital.resources.includes(item));
+          const reasons = [];
+
+          if (missing.length) reasons.push(`Recursos obrigatórios ausentes: ${missing.map((item) => RESOURCE_LABELS[item] || item).join(', ')}`);
+          if (hospital.type === 'upa' && (classification.gravity === 'critico' || classification.requiredResources.includes('UTI_ADULTO') || classification.requiredResources.includes('HEMODINAMICA') || classification.requiredResources.includes('NEUROCIRURGIA'))) {
+            reasons.push('UPA não é destino definitivo para caso de alta complexidade.');
+          }
+          if (snapshot.occupancy === 'critica' && ['critico', 'alto'].includes(classification.gravity)) {
+            reasons.push(`Lotação crítica (${snapshot.occupancyPercent}%).`);
+          }
+          if (classification.category === 'pediatrico' && !hospital.resources.includes('PEDIATRIA') && !hospital.resources.includes('UTI_PEDIATRICA')) {
+            reasons.push('Unidade sem estrutura pediátrica adequada.');
+          }
+          if (distanceKm > 40 && classification.gravity === 'critico') {
+            reasons.push(`Distância de ${distanceKm.toFixed(1)} km considerada excessiva.`);
+          }
+
+          if (reasons.length) {
+            excluded.push({ hospital, reasons });
+            return;
+          }
+
+          const resourceScore = classification.requiredResources.length
+            ? Math.round((classification.requiredResources.filter((item) => hospital.resources.includes(item)).length / classification.requiredResources.length) * 40)
+            : 35;
+          const desiredScore = classification.desiredResources.length
+            ? Math.round((classification.desiredResources.filter((item) => hospital.resources.includes(item)).length / classification.desiredResources.length) * 10)
+            : 6;
+          const distanceScore = Math.max(0, Math.round(25 - (distanceKm / 30) * 25));
+          const occupancyScore = snapshot.occupancy === 'baixa' ? 20 : snapshot.occupancy === 'media' ? 15 : snapshot.occupancy === 'alta' ? 7 : 0;
+          const operational = Math.round(Math.min(10, hospital.baseScore / 10));
+          const specialty = classification.category === 'cardiologico' && hospital.resources.includes('HEMODINAMICA')
+            ? 15
+            : classification.category === 'neurologico' && hospital.resources.includes('NEUROLOGIA')
+            ? 14
+            : classification.category === 'trauma' && hospital.resources.includes('TRAUMA')
+            ? 15
+            : classification.category === 'obstetrico' && hospital.resources.includes('MATERNIDADE')
+            ? 15
+            : classification.category === 'pediatrico' && hospital.resources.includes('PEDIATRIA')
+            ? 15
+            : 8;
+
+          const finalScore = resourceScore + desiredScore + distanceScore + occupancyScore + operational + specialty;
+
+          eligible.push({
+            hospital,
+            snapshot,
+            distanceKm: Number(distanceKm.toFixed(1)),
+            estimatedTimeMin: Math.round((distanceKm / (classification.gravity === 'critico' ? 70 : 55)) * 60 + 5),
+            finalScore,
+            confidence: 0,
+            score: {
+              resource: resourceScore + desiredScore,
+              distance: distanceScore,
+              occupancy: occupancyScore,
+              specialty,
+              operational,
+            },
+            justification: [
+              `Compatível com ${classification.requiredResources.length || 0} recursos obrigatórios.`,
+              `Lotação atual ${snapshot.occupancyPercent}% com ${snapshot.availableBeds} leitos livres.`,
+              hospital.regulationNotes,
+            ],
+          });
+        });
+
+        eligible.sort((a, b) => b.finalScore - a.finalScore);
+        eligible.forEach((item, index) => {
+          const gap = (eligible[0]?.finalScore || item.finalScore) - (eligible[1]?.finalScore || item.finalScore - 6);
+          item.rank = index + 1;
+          item.confidence = index === 0 ? (gap > 12 ? 92 : gap > 6 ? 78 : 64) : Math.max(44, Math.round((item.finalScore / eligible[0].finalScore) * 75));
+        });
+
+        if (!eligible.length) {
+          return {
+            recommended: null,
+            alternatives: [],
+            excluded,
+          };
+        }
+
+        return {
+          recommended: eligible[0],
+          alternatives: eligible.slice(1, 4),
+          excluded,
+        };
+      }
+
+      function loadCases() {
+        try { return JSON.parse(localStorage.getItem(STORAGE_KEYS.cases) || '[]'); }
+        catch { return []; }
+      }
+
+      function saveCases(cases) {
+        localStorage.setItem(STORAGE_KEYS.cases, JSON.stringify(cases));
+      }
+
+      function Badge({ children, tone = 'default' }) {
+        const tones = {
+          default: 'bg-slate-800/70 text-slate-300 border-slate-700/50',
+          info: 'bg-sky-500/15 text-sky-300 border-sky-500/30',
+          warning: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
+          danger: 'bg-red-500/15 text-red-300 border-red-500/30',
+          success: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
+        };
+        return <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${tones[tone]}`}>{children}</span>;
+      }
+
+      function Card({ children, className = '' }) {
+        return <div className={`rounded-3xl border border-slate-800/70 bg-slate-950/70 p-5 shadow-glow backdrop-blur ${className}`}>{children}</div>;
+      }
+
+      function StatCard({ label, value, sub }) {
+        return (
+          <Card className="p-4">
+            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{label}</p>
+            <p className="mt-2 font-display text-2xl font-semibold text-white">{value}</p>
+            <p className="mt-1 text-xs text-slate-500">{sub}</p>
+          </Card>
+        );
+      }
+
+      function HospitalMap({ hospitals, origin, selectedId, onSelect, height = 360 }) {
+        const ref = useRef(null);
+        const mapRef = useRef(null);
+        const layerRef = useRef(null);
+
+        useEffect(() => {
+          if (!ref.current || mapRef.current) return;
+          mapRef.current = L.map(ref.current, { zoomControl: true }).setView([-25.4296, -49.2719], 12);
+          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap',
+          }).addTo(mapRef.current);
+          layerRef.current = L.layerGroup().addTo(mapRef.current);
+        }, []);
+
+        useEffect(() => {
+          if (!mapRef.current || !layerRef.current) return;
+          layerRef.current.clearLayers();
+          hospitals.forEach((hospital) => {
+            const snapshot = getSnapshot(hospital);
+            const marker = L.circleMarker([hospital.lat, hospital.lng], {
+              radius: hospital.id === selectedId ? 10 : hospital.type === 'upa' ? 7 : 8,
+              color: hospital.type === 'upa' ? '#f97316' : '#38bdf8',
+              fillColor: hospital.id === selectedId ? '#22c55e' : hospital.type === 'upa' ? '#f97316' : '#38bdf8',
+              fillOpacity: 0.95,
+              weight: 2,
+            });
+            marker.bindPopup(
+              `<div style="font-family:DM Sans,sans-serif;min-width:220px">
+                <div style="font-weight:700;margin-bottom:4px">${hospital.shortName}</div>
+                <div style="font-size:12px;color:#94a3b8">${hospital.address}</div>
+                <div style="margin-top:6px;font-size:12px">Lotação ${snapshot.occupancyPercent}% · ${snapshot.statusLabel}</div>
+              </div>`,
+              { className: 'sireme-popup' }
+            );
+            marker.on('click', () => onSelect && onSelect(hospital.id));
+            marker.addTo(layerRef.current);
+          });
+
+          if (origin) {
+            L.circleMarker([origin.lat, origin.lng], {
+              radius: 7,
+              color: '#f59e0b',
+              fillColor: '#f59e0b',
+              fillOpacity: 1,
+              weight: 2,
+            }).bindPopup('Origem do caso').addTo(layerRef.current);
+          }
+        }, [hospitals, origin, selectedId, onSelect]);
+
+        return <div ref={ref} style={{ height, width: '100%' }} className="overflow-hidden rounded-3xl" />;
+      }
+
+      function LoginScreen({ onLogin }) {
+        const [email, setEmail] = useState('');
+        const [password, setPassword] = useState('');
+        const [error, setError] = useState('');
+
+        function fill(user) {
+          setEmail(user.email);
+          setPassword(user.password);
+          setError('');
+        }
+
+        function submit(event) {
+          event.preventDefault();
+          const user = USERS.find((item) => item.email === email && item.password === password);
+          if (!user) {
+            setError('Credenciais inválidas.');
+            return;
+          }
+          onLogin(user);
+        }
+
+        return (
+          <div className="min-h-screen bg-slate-950 px-4 py-12">
+            <div className="mx-auto max-w-5xl">
+              <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+                <Card className="relative overflow-hidden bg-gradient-to-br from-sky-500/10 via-slate-950 to-emerald-500/5">
+                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(56,189,248,0.12),transparent_35%),radial-gradient(circle_at_bottom_left,rgba(16,185,129,0.1),transparent_25%)]"></div>
+                  <div className="relative">
+                    <Badge tone="info">Healthtech MVP</Badge>
+                    <h1 className="mt-6 max-w-xl font-display text-4xl font-bold leading-tight text-white">SIREME transforma regulação médica em operação assistida, explicável e demonstrável.</h1>
+                    <p className="mt-4 max-w-xl text-base leading-relaxed text-slate-300">
+                      Plataforma mockada para apoio à decisão, encaminhamento hospitalar, auditoria do regulador, painel da rede e visão NIR / leitos.
+                    </p>
+                    <div className="mt-8 grid gap-4 sm:grid-cols-3">
+                      <StatCard label="Rede" value={`${HOSPITALS.length}`} sub="unidades de Curitiba" />
+                      <StatCard label="Motor" value="100%" sub="determinístico e explicável" />
+                      <StatCard label="Demo" value="5" sub="casos simulados prontos" />
+                    </div>
+                  </div>
+                </Card>
+
+                <Card className="max-w-lg">
+                  <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Acesso</p>
+                  <h2 className="mt-2 font-display text-2xl font-semibold text-white">Entrar no SIREME</h2>
+                  <form className="mt-6 space-y-4" onSubmit={submit}>
+                    <div>
+                      <label className="mb-2 block text-sm text-slate-400">E-mail</label>
+                      <input className="w-full rounded-2xl border border-slate-800 bg-slate-900/80 px-4 py-3 text-white outline-none" value={email} onChange={(e) => setEmail(e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-sm text-slate-400">Senha</label>
+                      <input type="password" className="w-full rounded-2xl border border-slate-800 bg-slate-900/80 px-4 py-3 text-white outline-none" value={password} onChange={(e) => setPassword(e.target.value)} />
+                    </div>
+                    {error ? <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">{error}</div> : null}
+                    <button className="w-full rounded-2xl bg-sky-500 px-4 py-3 font-semibold text-slate-950 transition hover:bg-sky-400">Entrar</button>
+                  </form>
+                  <div className="mt-6 space-y-3">
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Acesso demo</p>
+                    {USERS.map((user) => (
+                      <button key={user.id} onClick={() => fill(user)} className="flex w-full items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900/60 px-4 py-3 text-left hover:border-slate-700">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-sky-500/20 font-semibold text-sky-300">{user.initials}</div>
+                        <div>
+                          <div className="text-sm font-medium text-white">{user.name}</div>
+                          <div className="text-xs text-slate-500">{user.role} · SAMU Curitiba</div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </Card>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      function App() {
+        const [session, setSession] = useState(() => {
+          try { return JSON.parse(localStorage.getItem(STORAGE_KEYS.session) || 'null'); } catch { return null; }
+        });
+        const [view, setView] = useState('dashboard');
+        const [cases, setCases] = useState(() => loadCases());
+        const [pendingResult, setPendingResult] = useState(null);
+        const [tick, setTick] = useState(Date.now());
+        const [newCase, setNewCase] = useState({
+          patientId: '',
+          regulationCode: '',
+          age: 0,
+          sex: 'M',
+          origin: '',
+          originLat: -25.4296,
+          originLng: -49.2719,
+          transportType: 'USB',
+          caseType: 'pre_hospitalar',
+          chiefComplaint: '',
+          clinicalSuspicion: '',
+          vitalSigns: {},
+          consciousnessLevel: 'alerta',
+          triageTags: [],
+          observations: '',
+          requiredResources: [],
+          desiredResources: [],
+          freeNotes: '',
+        });
+        const [step, setStep] = useState(1);
+
+        useEffect(() => {
+          const timer = setInterval(() => setTick(Date.now()), 20000);
+          return () => clearInterval(timer);
+        }, []);
+
+        useEffect(() => {
+          saveCases(cases);
+        }, [cases]);
+
+        function handleLogin(user) {
+          localStorage.setItem(STORAGE_KEYS.session, JSON.stringify(user));
+          setSession(user);
+        }
+
+        function handleLogout() {
+          localStorage.removeItem(STORAGE_KEYS.session);
+          setSession(null);
+          setView('dashboard');
+          setPendingResult(null);
+        }
+
+        function updateForm(patch) {
+          setNewCase((current) => ({ ...current, ...patch }));
+        }
+
+        function toggleListValue(key, value) {
+          const list = newCase[key] || [];
+          updateForm({ [key]: list.includes(value) ? list.filter((item) => item !== value) : [...list, value] });
+        }
+
+        function generateRecommendation(form = newCase) {
+          const startedAt = Date.now();
+          const classification = classifyCase(form);
+          const recommendation = runRecommendationEngine(form, classification, HOSPITALS);
+          const result = {
+            caseId: generateCaseId(),
+            timestamp: new Date().toISOString(),
+            caseData: form,
+            classification,
+            ...recommendation,
+            processingTimeMs: 320,
+            timeToRecommendationMs: Date.now() - startedAt + 68000,
+          };
+          setPendingResult(result);
+          setView('recommendation');
+        }
+
+        function saveCase(finalHospitalId, overrideReason = '') {
+          if (!pendingResult) return;
+          const chosen = HOSPITALS.find((item) => item.id === finalHospitalId) || pendingResult.recommended.hospital;
+          const record = {
+            id: pendingResult.caseId,
+            savedAt: new Date().toISOString(),
+            caseData: pendingResult.caseData,
+            recommendation: pendingResult,
+            finalHospitalId: chosen.id,
+            finalHospitalName: chosen.name,
+            divergedFromSuggestion: chosen.id !== pendingResult.recommended.hospital.id,
+            overrideReason,
+            regulatorName: session.name,
+            timeline: [
+              { at: new Date(Date.now() - pendingResult.timeToRecommendationMs).toISOString(), label: 'Caso criado', detail: pendingResult.caseData.origin },
+              { at: pendingResult.timestamp, label: 'Classificação', detail: `${GRAVITY_LABELS[pendingResult.classification.gravity]} · ${CATEGORY_LABELS[pendingResult.classification.category]}` },
+              { at: pendingResult.timestamp, label: 'Recomendação', detail: pendingResult.recommended.hospital.shortName },
+              { at: new Date().toISOString(), label: 'Decisão final', detail: `${chosen.shortName}${overrideReason ? ` — ${overrideReason}` : ''}` },
+            ],
+          };
+          setCases((current) => [record, ...current].slice(0, 200));
+          setPendingResult(null);
+          setView('history');
+          setNewCase({
+            patientId: '',
+            regulationCode: '',
+            age: 0,
+            sex: 'M',
+            origin: '',
+            originLat: -25.4296,
+            originLng: -49.2719,
+            transportType: 'USB',
+            caseType: 'pre_hospitalar',
+            chiefComplaint: '',
+            clinicalSuspicion: '',
+            vitalSigns: {},
+            consciousnessLevel: 'alerta',
+            triageTags: [],
+            observations: '',
+            requiredResources: [],
+            desiredResources: [],
+            freeNotes: '',
+          });
+          setStep(1);
+        }
+
+        const liveHospitals = useMemo(() => HOSPITALS.map((item) => ({ ...item, snapshot: getSnapshot(item, tick) })), [tick]);
+        const topHospital = useMemo(() => {
+          const map = {};
+          cases.forEach((item) => {
+            map[item.recommendation.recommended.hospital.shortName] = (map[item.recommendation.recommended.hospital.shortName] || 0) + 1;
+          });
+          return Object.entries(map).sort((a, b) => b[1] - a[1])[0]?.[0] || '—';
+        }, [cases]);
+
+        if (!session) return <LoginScreen onLogin={handleLogin} />;
+
+        return (
+          <div className="min-h-screen">
+            <div className="mx-auto flex min-h-screen max-w-[1600px]">
+              <aside className="hidden w-72 flex-col border-r border-slate-800/70 bg-slate-950/90 p-6 lg:flex">
+                <div>
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-500/15 text-lg font-semibold text-sky-300">+</div>
+                    <div>
+                      <p className="font-display text-xl font-semibold text-white">SIREME</p>
+                      <p className="text-sm text-slate-500">Regulação assistida</p>
+                    </div>
+                  </div>
+                  <div className="mt-8 space-y-2">
+                    {NAV_ITEMS.map(([id, label]) => (
+                      <button
+                        key={id}
+                        onClick={() => setView(id)}
+                        className={`flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-left text-sm transition ${
+                          view === id ? 'border-sky-500/30 bg-sky-500/10 text-sky-300' : 'border-slate-800 bg-slate-900/40 text-slate-400 hover:border-slate-700 hover:text-white'
+                        }`}
+                      >
+                        <span>{label}</span>
+                        {view === id ? <span>•</span> : null}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="mt-auto rounded-3xl border border-slate-800 bg-slate-900/70 p-4">
+                  <p className="font-medium text-white">{session.name}</p>
+                  <p className="text-sm text-slate-500">{session.role}</p>
+                  <button onClick={handleLogout} className="mt-4 w-full rounded-2xl border border-slate-700 px-4 py-3 text-sm text-slate-300 hover:bg-slate-800">Sair</button>
+                </div>
+              </aside>
+
+              <main className="flex-1 p-4 lg:p-8">
+                <div className="mx-auto max-w-7xl space-y-6">
+                  <div className="flex flex-wrap items-center justify-between gap-4 rounded-[2rem] border border-slate-800/70 bg-slate-950/70 px-6 py-5">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.18em] text-slate-500">SIREME</p>
+                      <h1 className="mt-2 font-display text-3xl font-semibold text-white">
+                        {view === 'dashboard' ? 'Dashboard' :
+                         view === 'new-case' ? 'Novo Caso' :
+                         view === 'recommendation' ? 'Recomendação' :
+                         view === 'history' ? 'Histórico' :
+                         view === 'hospitals' ? 'Painel Hospitalar' :
+                         view === 'nir' ? 'Modo NIR / Leitos' : 'Modo Simulação'}
+                      </h1>
+                    </div>
+                    <div className="flex flex-wrap gap-2 lg:hidden">
+                      {NAV_ITEMS.map(([id, label]) => (
+                        <button key={id} onClick={() => setView(id)} className={`rounded-full px-3 py-2 text-xs ${view === id ? 'bg-sky-500 text-slate-950' : 'bg-slate-900 text-slate-300'}`}>{label}</button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {view === 'dashboard' && (
+                    <div className="space-y-6">
+                      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                        <StatCard label="Casos do dia" value={cases.filter((item) => new Date(item.savedAt).toDateString() === new Date().toDateString()).length} sub="registrados hoje" />
+                        <StatCard label="Casos críticos" value={cases.filter((item) => item.recommendation.classification.gravity === 'critico').length} sub="histórico total" />
+                        <StatCard label="Tempo médio" value={cases.length ? formatDuration(cases.reduce((sum, item) => sum + item.recommendation.timeToRecommendationMs, 0) / cases.length) : '—'} sub="até recomendação" />
+                        <StatCard label="Top hospital" value={topHospital} sub="mais sugerido" />
+                      </div>
+
+                      <div className="grid gap-6 xl:grid-cols-[1.4fr_0.8fr]">
+                        <Card>
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Ações rápidas</p>
+                              <h2 className="mt-2 font-display text-xl text-white">Operação de regulação</h2>
+                            </div>
+                          </div>
+                          <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                            {[
+                              ['new-case', 'Novo Caso'],
+                              ['hospitals', 'Hospitais'],
+                              ['history', 'Histórico'],
+                              ['nir', 'NIR / Leitos'],
+                              ['simulation', 'Simulação'],
+                            ].map(([id, label]) => (
+                              <button key={id} onClick={() => setView(id)} className="rounded-2xl border border-slate-800 bg-slate-900/60 px-4 py-5 text-left hover:border-slate-700">
+                                <div className="font-medium text-white">{label}</div>
+                                <div className="mt-1 text-xs text-slate-500">Abrir painel</div>
+                              </button>
+                            ))}
+                          </div>
+
+                          <div className="mt-6">
+                            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Casos recentes</p>
+                            <div className="mt-4 space-y-3">
+                              {cases.length ? cases.slice(0, 5).map((item) => (
+                                <div key={item.id} className="rounded-2xl border border-slate-800 bg-slate-900/40 px-4 py-4">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className="font-mono text-xs text-slate-400">{item.id}</span>
+                                    <Badge tone={item.recommendation.classification.gravity === 'critico' ? 'danger' : item.recommendation.classification.gravity === 'alto' ? 'warning' : 'info'}>
+                                      {GRAVITY_LABELS[item.recommendation.classification.gravity]}
+                                    </Badge>
+                                    {item.divergedFromSuggestion ? <Badge tone="warning">Override</Badge> : null}
+                                  </div>
+                                  <p className="mt-2 text-sm text-slate-300">{item.finalHospitalName}</p>
+                                  <p className="text-xs text-slate-500">{item.regulatorName}</p>
+                                </div>
+                              )) : <div className="rounded-2xl border border-slate-800 bg-slate-900/40 px-4 py-8 text-center text-slate-500">Nenhum caso salvo ainda.</div>}
+                            </div>
+                          </div>
+                        </Card>
+
+                        <div className="space-y-6">
+                          <Card>
+                            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Rede em tempo simulado</p>
+                            <div className="mt-4 space-y-3">
+                              {liveHospitals.slice().sort((a, b) => a.snapshot.occupancyPercent - b.snapshot.occupancyPercent).slice(0, 4).map((item) => (
+                                <div key={item.id} className="rounded-2xl border border-slate-800 bg-slate-900/50 px-4 py-4">
+                                  <div className="flex items-center justify-between gap-3">
+                                    <div>
+                                      <p className="font-medium text-white">{item.shortName}</p>
+                                      <p className="text-xs text-slate-500">{item.snapshot.statusLabel}</p>
+                                    </div>
+                                    <Badge tone={item.snapshot.occupancy === 'critica' ? 'danger' : item.snapshot.occupancy === 'alta' ? 'warning' : 'success'}>
+                                      {item.snapshot.occupancyPercent}%
+                                    </Badge>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </Card>
+
+                          <Card>
+                            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Indicadores</p>
+                            <div className="mt-4 grid gap-3">
+                              <div className="rounded-2xl border border-slate-800 bg-slate-900/50 px-4 py-4">
+                                <p className="text-sm text-slate-400">Aderência à sugestão</p>
+                                <p className="mt-2 font-display text-2xl text-white">
+                                  {cases.length ? `${Math.round((cases.filter((item) => !item.divergedFromSuggestion).length / cases.length) * 100)}%` : '—'}
+                                </p>
+                              </div>
+                              <div className="rounded-2xl border border-slate-800 bg-slate-900/50 px-4 py-4">
+                                <p className="text-sm text-slate-400">Unidades sob pressão</p>
+                                <p className="mt-2 font-display text-2xl text-white">
+                                  {liveHospitals.filter((item) => item.snapshot.occupancy === 'critica').length}
+                                </p>
+                              </div>
+                            </div>
+                          </Card>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {view === 'new-case' && (
+                    <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
+                      <Card>
+                        <div className="flex flex-wrap gap-2">
+                          {[1, 2, 3, 4].map((item) => (
+                            <button key={item} onClick={() => setStep(item)} className={`rounded-full px-4 py-2 text-sm ${step === item ? 'bg-sky-500 text-slate-950' : 'bg-slate-900 text-slate-400'}`}>
+                              Etapa {item}
+                            </button>
+                          ))}
+                        </div>
+
+                        <div className="mt-6 space-y-5">
+                          {step === 1 && (
+                            <>
+                              <div className="grid gap-4 md:grid-cols-2">
+                                <div>
+                                  <label className="mb-2 block text-sm text-slate-400">Identificador</label>
+                                  <input className="w-full rounded-2xl border border-slate-800 bg-slate-900/80 px-4 py-3 text-white" value={newCase.patientId} onChange={(e) => updateForm({ patientId: e.target.value })} />
+                                </div>
+                                <div>
+                                  <label className="mb-2 block text-sm text-slate-400">REDS / Regulação</label>
+                                  <input className="w-full rounded-2xl border border-slate-800 bg-slate-900/80 px-4 py-3 text-white" value={newCase.regulationCode} onChange={(e) => updateForm({ regulationCode: e.target.value })} />
+                                </div>
+                                <div>
+                                  <label className="mb-2 block text-sm text-slate-400">Idade</label>
+                                  <input type="number" className="w-full rounded-2xl border border-slate-800 bg-slate-900/80 px-4 py-3 text-white" value={newCase.age || ''} onChange={(e) => updateForm({ age: Number(e.target.value) })} />
+                                </div>
+                                <div>
+                                  <label className="mb-2 block text-sm text-slate-400">Sexo</label>
+                                  <select className="w-full rounded-2xl border border-slate-800 bg-slate-900/80 px-4 py-3 text-white" value={newCase.sex} onChange={(e) => updateForm({ sex: e.target.value })}>
+                                    <option value="M">Masculino</option>
+                                    <option value="F">Feminino</option>
+                                  </select>
+                                </div>
+                                <div className="md:col-span-2">
+                                  <label className="mb-2 block text-sm text-slate-400">Origem</label>
+                                  <select
+                                    className="w-full rounded-2xl border border-slate-800 bg-slate-900/80 px-4 py-3 text-white"
+                                    value={newCase.origin}
+                                    onChange={(e) => {
+                                      const origin = CURITIBA_ORIGINS.find((item) => item.name === e.target.value);
+                                      updateForm({ origin: e.target.value, originLat: origin?.lat || -25.4296, originLng: origin?.lng || -49.2719 });
+                                    }}
+                                  >
+                                    <option value="">Selecione</option>
+                                    {CURITIBA_ORIGINS.map((origin) => <option key={origin.name} value={origin.name}>{origin.name}</option>)}
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="mb-2 block text-sm text-slate-400">Transporte</label>
+                                  <select className="w-full rounded-2xl border border-slate-800 bg-slate-900/80 px-4 py-3 text-white" value={newCase.transportType} onChange={(e) => updateForm({ transportType: e.target.value })}>
+                                    <option>USB</option>
+                                    <option>USA</option>
+                                    <option>helicoptero</option>
+                                    <option>particular</option>
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="mb-2 block text-sm text-slate-400">Tipo de caso</label>
+                                  <select className="w-full rounded-2xl border border-slate-800 bg-slate-900/80 px-4 py-3 text-white" value={newCase.caseType} onChange={(e) => updateForm({ caseType: e.target.value })}>
+                                    <option value="pre_hospitalar">Pré-hospitalar</option>
+                                    <option value="transferencia">Transferência</option>
+                                    <option value="vaga_especializada">Vaga especializada</option>
+                                    <option value="avaliacao_inicial">Avaliação inicial</option>
+                                  </select>
+                                </div>
+                              </div>
+                            </>
+                          )}
+
+                          {step === 2 && (
+                            <>
+                              <div>
+                                <label className="mb-2 block text-sm text-slate-400">Queixa principal</label>
+                                <textarea className="min-h-[110px] w-full rounded-2xl border border-slate-800 bg-slate-900/80 px-4 py-3 text-white" value={newCase.chiefComplaint} onChange={(e) => updateForm({ chiefComplaint: e.target.value })}></textarea>
+                              </div>
+                              <div>
+                                <label className="mb-2 block text-sm text-slate-400">Suspeita clínica</label>
+                                <textarea className="min-h-[110px] w-full rounded-2xl border border-slate-800 bg-slate-900/80 px-4 py-3 text-white" value={newCase.clinicalSuspicion} onChange={(e) => updateForm({ clinicalSuspicion: e.target.value })}></textarea>
+                              </div>
+                              <div className="grid gap-4 md:grid-cols-4">
+                                {[
+                                  ['pressuraSistolica', 'PA sistólica'],
+                                  ['frequenciaCardiaca', 'FC'],
+                                  ['saturacaoO2', 'SpO₂'],
+                                  ['glasgow', 'Glasgow'],
+                                ].map(([key, label]) => (
+                                  <div key={key}>
+                                    <label className="mb-2 block text-sm text-slate-400">{label}</label>
+                                    <input type="number" className="w-full rounded-2xl border border-slate-800 bg-slate-900/80 px-4 py-3 text-white" value={newCase.vitalSigns[key] || ''} onChange={(e) => updateForm({ vitalSigns: { ...newCase.vitalSigns, [key]: Number(e.target.value) || undefined } })} />
+                                  </div>
+                                ))}
+                              </div>
+                              <div>
+                                <label className="mb-2 block text-sm text-slate-400">Nível de consciência</label>
+                                <select className="w-full rounded-2xl border border-slate-800 bg-slate-900/80 px-4 py-3 text-white" value={newCase.consciousnessLevel} onChange={(e) => updateForm({ consciousnessLevel: e.target.value })}>
+                                  <option value="alerta">Alerta</option>
+                                  <option value="confuso">Confuso</option>
+                                  <option value="soporoso">Soporoso</option>
+                                  <option value="inconsciente">Inconsciente</option>
+                                </select>
+                              </div>
+                              <div>
+                                <label className="mb-2 block text-sm text-slate-400">Mini triagem guiada</label>
+                                <div className="flex flex-wrap gap-2">
+                                  {TRIAGE_OPTIONS.map(([value, label]) => (
+                                    <button key={value} onClick={() => toggleListValue('triageTags', value)} type="button" className={`rounded-full border px-3 py-2 text-sm ${newCase.triageTags.includes(value) ? 'border-sky-500/40 bg-sky-500/10 text-sky-300' : 'border-slate-800 bg-slate-900/40 text-slate-400'}`}>
+                                      {label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            </>
+                          )}
+
+                          {step === 3 && (
+                            <>
+                              <div>
+                                <label className="mb-2 block text-sm text-slate-400">Recursos obrigatórios</label>
+                                <div className="flex flex-wrap gap-2">
+                                  {Object.keys(RESOURCE_LABELS).map((resource) => (
+                                    <button key={resource} type="button" onClick={() => toggleListValue('requiredResources', resource)} className={`rounded-full border px-3 py-2 text-sm ${newCase.requiredResources.includes(resource) ? 'border-red-500/40 bg-red-500/10 text-red-300' : 'border-slate-800 bg-slate-900/40 text-slate-400'}`}>
+                                      {RESOURCE_LABELS[resource]}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                              <div>
+                                <label className="mb-2 block text-sm text-slate-400">Recursos desejáveis</label>
+                                <div className="flex flex-wrap gap-2">
+                                  {Object.keys(RESOURCE_LABELS).map((resource) => (
+                                    <button key={resource} type="button" onClick={() => toggleListValue('desiredResources', resource)} className={`rounded-full border px-3 py-2 text-sm ${newCase.desiredResources.includes(resource) ? 'border-sky-500/40 bg-sky-500/10 text-sky-300' : 'border-slate-800 bg-slate-900/40 text-slate-400'}`}>
+                                      {RESOURCE_LABELS[resource]}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                              <div>
+                                <label className="mb-2 block text-sm text-slate-400">Observações livres</label>
+                                <textarea className="min-h-[120px] w-full rounded-2xl border border-slate-800 bg-slate-900/80 px-4 py-3 text-white" value={newCase.freeNotes} onChange={(e) => updateForm({ freeNotes: e.target.value })}></textarea>
+                              </div>
+                            </>
+                          )}
+
+                          {step === 4 && (
+                            <div className="space-y-4">
+                              <Card className="border-sky-500/20 bg-sky-500/5">
+                                {(() => {
+                                  const preview = classifyCase(newCase);
+                                  return (
+                                    <>
+                                      <div className="flex flex-wrap gap-2">
+                                        <Badge tone={preview.gravity === 'critico' ? 'danger' : preview.gravity === 'alto' ? 'warning' : 'info'}>{GRAVITY_LABELS[preview.gravity]}</Badge>
+                                        <Badge tone="info">{CATEGORY_LABELS[preview.category]}</Badge>
+                                        <Badge tone="success">{CARE_LINE_LABELS[preview.careLine]}</Badge>
+                                      </div>
+                                      <p className="mt-4 text-sm text-slate-300">Pré-classificação pronta para gerar recomendação hospitalar.</p>
+                                    </>
+                                  );
+                                })()}
+                              </Card>
+                              <button onClick={() => generateRecommendation()} className="w-full rounded-2xl bg-sky-500 px-4 py-4 font-semibold text-slate-950">Gerar recomendação</button>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="mt-6 flex items-center justify-between">
+                          <button disabled={step === 1} onClick={() => setStep((value) => Math.max(1, value - 1))} className="rounded-2xl border border-slate-800 px-4 py-3 text-sm text-slate-300 disabled:opacity-40">Voltar</button>
+                          <button disabled={step === 4} onClick={() => setStep((value) => Math.min(4, value + 1))} className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-950 disabled:opacity-40">Continuar</button>
+                        </div>
+                      </Card>
+
+                      <div className="space-y-6">
+                        <Card>
+                          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Mapa da origem</p>
+                          <div className="mt-4">
+                            <HospitalMap hospitals={HOSPITALS} origin={newCase.origin ? { lat: newCase.originLat, lng: newCase.originLng } : null} height={320} />
+                          </div>
+                        </Card>
+                      </div>
+                    </div>
+                  )}
+
+                  {view === 'recommendation' && pendingResult && (
+                    <RecommendationView result={pendingResult} onBack={() => setView('new-case')} onSave={saveCase} />
+                  )}
+
+                  {view === 'history' && (
+                    <div className="space-y-4">
+                      {cases.length ? cases.map((item) => (
+                        <Card key={item.id}>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-mono text-xs text-slate-500">{item.id}</span>
+                            <Badge tone={item.recommendation.classification.gravity === 'critico' ? 'danger' : item.recommendation.classification.gravity === 'alto' ? 'warning' : 'info'}>
+                              {GRAVITY_LABELS[item.recommendation.classification.gravity]}
+                            </Badge>
+                            <Badge tone="info">{CATEGORY_LABELS[item.recommendation.classification.category]}</Badge>
+                            {item.divergedFromSuggestion ? <Badge tone="warning">Override</Badge> : <Badge tone="success">Aderente</Badge>}
+                          </div>
+                          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                            <div className="space-y-2 text-sm text-slate-300">
+                              <p><strong className="text-white">Paciente:</strong> {item.caseData.patientId}</p>
+                              <p><strong className="text-white">Sugerido:</strong> {item.recommendation.recommended.hospital.shortName}</p>
+                              <p><strong className="text-white">Escolhido:</strong> {item.finalHospitalName}</p>
+                              <p><strong className="text-white">Tempo até recomendação:</strong> {formatDuration(item.recommendation.timeToRecommendationMs)}</p>
+                              {item.overrideReason ? <p><strong className="text-white">Motivo final:</strong> {item.overrideReason}</p> : null}
+                            </div>
+                            <div className="space-y-3">
+                              {item.timeline.map((entry, index) => (
+                                <div key={index} className="rounded-2xl border border-slate-800 bg-slate-900/40 px-4 py-3 text-sm">
+                                  <p className="font-medium text-white">{entry.label}</p>
+                                  <p className="text-xs text-slate-500">{entry.detail}</p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </Card>
+                      )) : <Card className="text-center text-slate-500">Nenhum caso salvo ainda.</Card>}
+                    </div>
+                  )}
+
+                  {view === 'hospitals' && (
+                    <HospitalNetworkView hospitals={liveHospitals} />
+                  )}
+
+                  {view === 'simulation' && (
+                    <div className="grid gap-4 lg:grid-cols-2">
+                      {SIMULATION_CASES.map((simulation) => (
+                        <Card key={simulation.id}>
+                          <div className="flex items-start gap-4">
+                            <div className="text-3xl">{simulation.icon}</div>
+                            <div>
+                              <h3 className="font-display text-xl text-white">{simulation.title}</h3>
+                              <p className="text-sm text-slate-500">{simulation.subtitle}</p>
+                              <div className="mt-3 flex gap-2">
+                                <Badge tone="info">{simulation.expectedCategory}</Badge>
+                                <Badge tone={simulation.expectedGravity === 'Crítico' ? 'danger' : 'warning'}>{simulation.expectedGravity}</Badge>
+                              </div>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setNewCase({ ...simulation.data });
+                              generateRecommendation({ ...simulation.data });
+                            }}
+                            className="mt-5 w-full rounded-2xl bg-sky-500 px-4 py-3 font-semibold text-slate-950"
+                          >
+                            Rodar simulação
+                          </button>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+
+                  {view === 'nir' && (
+                    <NirView hospitals={liveHospitals} />
+                  )}
+                </div>
+              </main>
+            </div>
+          </div>
+        );
+      }
+
+      function RecommendationView({ result, onBack, onSave }) {
+        const [decisionMode, setDecisionMode] = useState('confirm');
+        const [selectedHospitalId, setSelectedHospitalId] = useState(result.alternatives[0]?.hospital.id || result.recommended.hospital.id);
+        const [overrideReason, setOverrideReason] = useState('');
+        const mapHospitals = [result.recommended.hospital, ...result.alternatives.map((item) => item.hospital)];
+
+        return (
+          <div className="space-y-6">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+              <StatCard label="Categoria" value={CATEGORY_LABELS[result.classification.category]} sub={CARE_LINE_LABELS[result.classification.careLine]} />
+              <StatCard label="Gravidade" value={GRAVITY_LABELS[result.classification.gravity]} sub={`${result.classification.alerts.length} alertas`} />
+              <StatCard label="Recursos" value={result.classification.requiredResources.length} sub="obrigatórios" />
+              <StatCard label="Confiança" value={`${result.recommended.confidence}%`} sub="recomendação" />
+              <StatCard label="Tempo" value={`~${result.recommended.estimatedTimeMin} min`} sub="deslocamento estimado" />
+            </div>
+
+            <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+              <Card>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge tone={result.classification.gravity === 'critico' ? 'danger' : result.classification.gravity === 'alto' ? 'warning' : 'info'}>
+                    {GRAVITY_LABELS[result.classification.gravity]}
+                  </Badge>
+                  <Badge tone="info">{CATEGORY_LABELS[result.classification.category]}</Badge>
+                  <Badge tone="success">{CARE_LINE_LABELS[result.classification.careLine]}</Badge>
+                </div>
+                <h2 className="mt-4 font-display text-3xl font-semibold text-white">{result.recommended.hospital.name}</h2>
+                <p className="mt-2 text-slate-400">{result.recommended.hospital.neighborhood} · score final {result.recommended.finalScore}</p>
+                <div className="mt-6 grid gap-3 md:grid-cols-2">
+                  <div className="rounded-2xl border border-slate-800 bg-slate-900/50 px-4 py-4">
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Justificativa</p>
+                    <div className="mt-3 space-y-2 text-sm text-slate-300">
+                      {result.recommended.justification.map((item, index) => <p key={index}>• {item}</p>)}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-slate-800 bg-slate-900/50 px-4 py-4">
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Recursos necessários</p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {result.classification.requiredResources.map((item) => <Badge key={item} tone="danger">{RESOURCE_LABELS[item]}</Badge>)}
+                      {result.classification.desiredResources.map((item) => <Badge key={item} tone="info">{RESOURCE_LABELS[item]}</Badge>)}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-6">
+                  <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Alternativas secundárias</p>
+                  <div className="mt-3 space-y-3">
+                    {result.alternatives.map((item) => (
+                      <div key={item.hospital.id} className="rounded-2xl border border-slate-800 bg-slate-900/50 px-4 py-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="font-medium text-white">{item.hospital.shortName}</p>
+                            <p className="text-xs text-slate-500">{item.distanceKm} km · {item.snapshot.occupancyPercent}% lotação</p>
+                          </div>
+                          <Badge tone="default">{item.finalScore} pts</Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mt-6">
+                  <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Hospitais excluídos</p>
+                  <div className="mt-3 space-y-3">
+                    {result.excluded.slice(0, 6).map((item) => (
+                      <div key={item.hospital.id} className="rounded-2xl border border-slate-800 bg-slate-900/50 px-4 py-4">
+                        <p className="font-medium text-white">{item.hospital.shortName}</p>
+                        <div className="mt-2 space-y-1 text-xs text-slate-500">
+                          {item.reasons.map((reason, index) => <p key={index}>• {reason}</p>)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </Card>
+
+              <div className="space-y-6">
+                <Card>
+                  <HospitalMap
+                    hospitals={mapHospitals}
+                    origin={{ lat: result.caseData.originLat, lng: result.caseData.originLng }}
+                    selectedId={result.recommended.hospital.id}
+                    height={320}
+                  />
+                </Card>
+
+                <Card>
+                  <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Decisão do regulador</p>
+                  <div className="mt-4 flex gap-2">
+                    <button onClick={() => setDecisionMode('confirm')} className={`rounded-2xl px-4 py-3 text-sm ${decisionMode === 'confirm' ? 'bg-sky-500 text-slate-950' : 'bg-slate-900 text-slate-300'}`}>Confirmar</button>
+                    <button onClick={() => setDecisionMode('override')} className={`rounded-2xl px-4 py-3 text-sm ${decisionMode === 'override' ? 'bg-amber-500 text-slate-950' : 'bg-slate-900 text-slate-300'}`}>Override</button>
+                  </div>
+                  {decisionMode === 'override' ? (
+                    <div className="mt-4 space-y-4">
+                      <select className="w-full rounded-2xl border border-slate-800 bg-slate-900/80 px-4 py-3 text-white" value={selectedHospitalId} onChange={(e) => setSelectedHospitalId(e.target.value)}>
+                        {HOSPITALS.filter((item) => item.id !== result.recommended.hospital.id).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                      </select>
+                      <textarea className="min-h-[120px] w-full rounded-2xl border border-slate-800 bg-slate-900/80 px-4 py-3 text-white" placeholder="Motivo da divergência" value={overrideReason} onChange={(e) => setOverrideReason(e.target.value)}></textarea>
+                    </div>
+                  ) : null}
+                  <div className="mt-6 flex gap-3">
+                    <button onClick={onBack} className="flex-1 rounded-2xl border border-slate-800 px-4 py-3 text-sm text-slate-300">Editar caso</button>
+                    <button onClick={() => onSave(decisionMode === 'override' ? selectedHospitalId : result.recommended.hospital.id, overrideReason)} className="flex-1 rounded-2xl bg-sky-500 px-4 py-3 text-sm font-semibold text-slate-950">Salvar caso</button>
+                  </div>
+                </Card>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      function HospitalNetworkView({ hospitals }) {
+        const [filter, setFilter] = useState('all');
+        const [selectedId, setSelectedId] = useState(hospitals[0]?.id);
+        const filtered = filter === 'all' ? hospitals : hospitals.filter((item) => item.type === filter);
+        return (
+          <div className="space-y-6">
+            <Card>
+              <div className="flex flex-wrap gap-2">
+                {['all', 'hospital', 'upa'].map((filterKey) => (
+                  <button key={filterKey} onClick={() => setFilter(filterKey)} className={`rounded-full px-4 py-2 text-sm ${filter === filterKey ? 'bg-sky-500 text-slate-950' : 'bg-slate-900 text-slate-300'}`}>
+                    {filterKey === 'all' ? 'Todos' : filterKey === 'hospital' ? 'Hospitais' : 'UPAs'}
+                  </button>
+                ))}
+              </div>
+              <div className="mt-5">
+                <HospitalMap hospitals={filtered} selectedId={selectedId} onSelect={setSelectedId} height={380} />
+              </div>
+            </Card>
+
+            <div className="grid gap-4 xl:grid-cols-2">
+              {filtered.map((item) => (
+                <Card key={item.id}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="flex flex-wrap gap-2">
+                        <Badge tone={item.type === 'upa' ? 'warning' : 'info'}>{item.type === 'upa' ? 'UPA' : 'Hospital'}</Badge>
+                        <Badge tone="default">CNES {item.cnes}</Badge>
+                      </div>
+                      <h3 className="mt-4 font-display text-2xl text-white">{item.name}</h3>
+                      <p className="text-sm text-slate-500">{item.address}</p>
+                    </div>
+                    <Badge tone={item.snapshot.occupancy === 'critica' ? 'danger' : item.snapshot.occupancy === 'alta' ? 'warning' : 'success'}>
+                      {item.snapshot.occupancyPercent}%
+                    </Badge>
+                  </div>
+                  <div className="mt-4 grid gap-3 md:grid-cols-3">
+                    <StatCard label="Leitos" value={item.totalBeds} sub="totais" />
+                    <StatCard label="UTI" value={item.icuBeds || '—'} sub="leitos" />
+                    <StatCard label="Fila" value={item.snapshot.emergencyQueue} sub={item.snapshot.statusLabel} />
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {item.offers.map((offer) => <Badge key={offer} tone="info">{offer}</Badge>)}
+                  </div>
+                  <p className="mt-4 text-sm text-slate-400">{item.regulationNotes}</p>
+                </Card>
+              ))}
+            </div>
+          </div>
+        );
+      }
+
+      function NirView({ hospitals }) {
+        const panel = hospitals.filter((item) => item.type === 'hospital').map((item) => ({
+          ...item,
+          adultIcu: item.resources.includes('UTI_ADULTO') ? Math.max(0, Math.round(item.icuBeds * (100 - item.snapshot.occupancyPercent) / 100)) : 0,
+          pedIcu: item.resources.includes('UTI_PEDIATRICA') ? Math.max(0, Math.round(item.icuBeds * 0.35 * (100 - item.snapshot.occupancyPercent) / 100)) : 0,
+          neoIcu: item.resources.includes('UTI_NEONATAL') ? Math.max(0, Math.round(item.icuBeds * 0.45 * (100 - item.snapshot.occupancyPercent) / 100)) : 0,
+          monitored: Math.max(1, Math.round(item.totalBeds * 0.1 * (100 - item.snapshot.occupancyPercent) / 100)),
+        })).sort((a, b) => (b.adultIcu + b.pedIcu + b.neoIcu) - (a.adultIcu + a.pedIcu + a.neoIcu));
+
+        return (
+          <div className="space-y-6">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+              <StatCard label="UTI Adulto" value={panel.reduce((sum, item) => sum + item.adultIcu, 0)} sub="estimados livres" />
+              <StatCard label="UTI Pediátrica" value={panel.reduce((sum, item) => sum + item.pedIcu, 0)} sub="estimados livres" />
+              <StatCard label="UTI Neonatal" value={panel.reduce((sum, item) => sum + item.neoIcu, 0)} sub="estimados livres" />
+              <StatCard label="Fila regulada" value={NIR_REQUESTS.length} sub="solicitações ativas" />
+              <StatCard label="Pressão da rede" value={panel.filter((item) => ['alta', 'critica'].includes(item.snapshot.occupancy)).length} sub="unidades tensionadas" />
+            </div>
+
+            <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+              <div className="space-y-4">
+                {panel.map((item) => (
+                  <Card key={item.id}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-display text-2xl text-white">{item.shortName}</p>
+                        <p className="text-sm text-slate-500">{item.neighborhood} · {item.snapshot.statusLabel}</p>
+                      </div>
+                      <Badge tone={item.snapshot.occupancy === 'critica' ? 'danger' : item.snapshot.occupancy === 'alta' ? 'warning' : 'success'}>
+                        {item.snapshot.occupancyPercent}%
+                      </Badge>
+                    </div>
+                    <div className="mt-5 grid gap-3 md:grid-cols-4">
+                      <StatCard label="UTI adulto" value={item.adultIcu} sub="estimados" />
+                      <StatCard label="UTI pediátrica" value={item.pedIcu} sub="estimados" />
+                      <StatCard label="UTI neo" value={item.neoIcu} sub="estimados" />
+                      <StatCard label="Monitorizados" value={item.monitored} sub="estimados" />
+                    </div>
+                  </Card>
+                ))}
+              </div>
+
+              <div className="space-y-4">
+                {NIR_REQUESTS.map((request) => (
+                  <Card key={request.id}>
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="font-display text-xl text-white">{request.patientCode}</p>
+                      <Badge tone={request.priority === 'Crítica' ? 'danger' : 'warning'}>{request.priority}</Badge>
+                    </div>
+                    <p className="mt-2 text-sm text-slate-400">{request.originUnit}</p>
+                    <p className="mt-2 text-sm text-slate-300">{RESOURCE_LABELS[request.resource]}</p>
+                    <p className="mt-2 text-xs text-slate-500">{request.status}</p>
+                    <p className="mt-3 text-sm text-slate-400">{request.notes}</p>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+  </body>
+</html>
