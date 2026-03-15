@@ -174,6 +174,48 @@
         ['crianca_risco', 'Criança em risco'],
       ];
 
+      const PROTOCOL_WINDOWS = {
+        cardiologico: { label: 'Porta-balão (IAM)', totalMin: 90, color: 'rose' },
+        neurologico:  { label: 'Janela AVC / Trombolítico', totalMin: 270, color: 'amber' },
+        infeccioso:   { label: 'Hora 1 da Sepse', totalMin: 60, color: 'violet' },
+      };
+
+      const PROTOCOL_CHECKLISTS = {
+        dor_toracica_isquemica: {
+          title: 'Checklist IAM / SCA',
+          color: 'rose',
+          items: ['Irradiação para braço esq., mandíbula ou dorso?','Sudorese fria e/ou náusea presentes?','Início dos sintomas há menos de 12h?','ECG de 12 derivações realizado?','AAS 200mg administrado (sem contraindicação)?','Acesso venoso calibroso estabelecido?'],
+        },
+        deficit_focal_agudo: {
+          title: 'Checklist AVC / Linha Neuro',
+          color: 'amber',
+          items: ['Hora exata do início dos sintomas confirmada?','Screening FAST: face + braço + fala?','Uso de anticoagulante oral nos últimos 48h?','Glicemia verificada (excluir hipoglicemia)?','PA monitorada — alvo < 185/110 para trombólise?','TC solicitada com prioridade no destino?'],
+        },
+        sepse_provavel: {
+          title: 'Checklist Sepse / Hora 1',
+          color: 'violet',
+          items: ['Foco infeccioso identificado?','Lactato coletado (alvo < 2 mmol/L)?','Hemocultura antes do antibiótico?','Antibiótico IV de amplo espectro iniciado?','Ressuscitação volêmica 30 mL/kg iniciada?','Vasopressor disponível se PA refratária?'],
+        },
+        gestante_alto_risco: {
+          title: 'Checklist Obstétrico / Alto Risco',
+          color: 'pink',
+          items: ['Idade gestacional confirmada?','Sulfato de magnésio disponível (se eclâmpsia)?','Batimentos cardiofetais monitorados?','PA aferida e documentada?','Acesso venoso calibroso estabelecido?'],
+        },
+        politrauma_mecanismo: {
+          title: 'Checklist Trauma / ABCDE',
+          color: 'orange',
+          items: ['Via aérea aberta e protegida (A)?','Imobilização cervical realizada (C)?','Hemostasia de sangramentos externos (C)?','Glasgow aferido e documentado (D)?','Duplo acesso venoso estabelecido?','Ativação de protocolo de transfusão?'],
+        },
+      };
+
+      const TIMER_COLORS = {
+        rose:   { bar: 'bg-rose-500',   text: 'text-rose-300',   border: 'border-rose-500/30',   bg: 'bg-rose-500/10'   },
+        amber:  { bar: 'bg-amber-500',  text: 'text-amber-300',  border: 'border-amber-500/30',  bg: 'bg-amber-500/10'  },
+        violet: { bar: 'bg-violet-500', text: 'text-violet-300', border: 'border-violet-500/30', bg: 'bg-violet-500/10' },
+        pink:   { bar: 'bg-pink-500',   text: 'text-pink-300',   border: 'border-pink-500/30',   bg: 'bg-pink-500/10'   },
+        orange: { bar: 'bg-orange-500', text: 'text-orange-300', border: 'border-orange-500/30', bg: 'bg-orange-500/10' },
+      };
+
       const CURITIBA_ORIGINS = [
         { name: 'Base SAMU Central — Centro', lat: -25.4296, lng: -49.2719 },
         { name: 'Base SAMU Leste — Cajuru', lat: -25.4239, lng: -49.2294 },
@@ -879,6 +921,66 @@
         } catch {}
       }
 
+      const NOTIFICATIONS_KEY = 'sireme_hospital_notifications';
+
+      function getNotificationsForHospital(hospitalId) {
+        try { const all = JSON.parse(localStorage.getItem(NOTIFICATIONS_KEY) || '{}'); return all[hospitalId] || []; }
+        catch { return []; }
+      }
+
+      function sendNotification(notif) {
+        try {
+          const all = JSON.parse(localStorage.getItem(NOTIFICATIONS_KEY) || '{}');
+          const list = all[notif.hospitalId] || [];
+          all[notif.hospitalId] = [{ ...notif, id: `notif-${Date.now()}`, sentAt: new Date().toISOString(), read: false }, ...list].slice(0, 10);
+          localStorage.setItem(NOTIFICATIONS_KEY, JSON.stringify(all));
+        } catch {}
+      }
+
+      function markNotificationsRead(hospitalId) {
+        try {
+          const all = JSON.parse(localStorage.getItem(NOTIFICATIONS_KEY) || '{}');
+          if (all[hospitalId]) all[hospitalId] = all[hospitalId].map((n) => ({ ...n, read: true }));
+          localStorage.setItem(NOTIFICATIONS_KEY, JSON.stringify(all));
+        } catch {}
+      }
+
+      function TherapeuticTimer({ category, startedAt }) {
+        const win = PROTOCOL_WINDOWS[category];
+        const [elapsed, setElapsed] = useState(() => Math.floor((Date.now() - startedAt) / 1000));
+        useEffect(() => {
+          const id = setInterval(() => setElapsed(Math.floor((Date.now() - startedAt) / 1000)), 1000);
+          return () => clearInterval(id);
+        }, [startedAt]);
+        if (!win) return null;
+        const totalSec = win.totalMin * 60;
+        const remaining = Math.max(0, totalSec - elapsed);
+        const pct = Math.min(100, (elapsed / totalSec) * 100);
+        const urgent = remaining < totalSec * 0.25 && remaining > 0;
+        const expired = remaining === 0;
+        const mins = Math.floor(remaining / 60);
+        const secs = remaining % 60;
+        const c = TIMER_COLORS[win.color] || TIMER_COLORS.rose;
+        return (
+          <div className={`rounded-2xl border p-4 ${expired ? 'border-red-500/40 bg-red-500/15' : c.border + ' ' + c.bg}`}>
+            <div className="flex items-center justify-between mb-2">
+              <p className={`text-xs font-semibold uppercase tracking-wider ${expired ? 'text-red-300' : c.text}`}>
+                {expired ? '⚠ JANELA VENCIDA' : `⏱ ${win.label}`}
+              </p>
+              <span className={`font-display text-2xl font-bold ${expired || urgent ? 'text-red-400' : c.text}`}>
+                {expired ? '00:00' : `${String(mins).padStart(2,'0')}:${String(secs).padStart(2,'0')}`}
+              </span>
+            </div>
+            <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
+              <div className={`h-2 rounded-full transition-all duration-500 ${expired || urgent ? 'bg-red-500' : c.bar}`} style={{ width: `${pct}%` }} />
+            </div>
+            <p className="mt-1.5 text-xs text-slate-500">
+              {expired ? 'Janela terapêutica expirada — decisão urgente' : `${mins}min ${secs}s restantes de ${win.totalMin}min`}
+            </p>
+          </div>
+        );
+      }
+
       function NumberStepper({ label, value, onChange }) {
         return (
           <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
@@ -918,6 +1020,13 @@
         });
         const [newEquipName, setNewEquipName] = useState('');
         const [newEquipImpact, setNewEquipImpact] = useState('medio');
+        const [notifications, setNotifications] = useState(() => getNotificationsForHospital(session.hospitalId));
+
+        function refreshNotifications() {
+          const fresh = getNotificationsForHospital(session.hospitalId);
+          setNotifications(fresh);
+          markNotificationsRead(session.hospitalId);
+        }
 
         function update(key, val) { setStatus((s) => ({ ...s, [key]: val })); }
 
@@ -941,7 +1050,8 @@
 
         const PS_COLORS = { aberto: 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300', restrito: 'bg-amber-500/15 border-amber-500/40 text-amber-300', fechado: 'bg-red-500/15 border-red-500/40 text-red-300' };
         const IMPACT_COLORS = { baixo: 'bg-sky-500/15 text-sky-300', medio: 'bg-amber-500/15 text-amber-300', alto: 'bg-red-500/15 text-red-300' };
-        const tabs = [['ps', isUpa ? 'PS / Atendimento' : 'Pronto-Socorro'], ['leitos', isUpa ? 'Observação' : 'Leitos'], ['equipamentos', 'Equipamentos'], ['notas', 'Observações']];
+        const unreadCount = notifications.filter((n) => !n.read).length;
+        const tabs = [['ps', isUpa ? 'PS / Atendimento' : 'Pronto-Socorro'], ['leitos', isUpa ? 'Observação' : 'Leitos'], ['equipamentos', 'Equipamentos'], ['notas', 'Observações'], ['notificacoes', 'Regulação']];
 
         if (!hospital) return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400">Hospital não encontrado.</div>;
 
@@ -967,11 +1077,12 @@
               {/* Tab nav */}
               <div className="mx-auto max-w-2xl mt-3 flex gap-1">
                 {tabs.map(([id, label]) => (
-                  <button key={id} onClick={() => setTab(id)}
+                  <button key={id} onClick={() => { setTab(id); if (id === 'notificacoes') refreshNotifications(); }}
                     className={`flex-1 rounded-xl py-2 text-xs font-semibold transition ${tab === id ? 'bg-sky-500/20 text-sky-300 border border-sky-500/30' : 'text-slate-500 hover:text-slate-300'}`}>
                     {label}
                     {id === 'equipamentos' && status.brokenEquipment.length > 0 && <span className="ml-1 inline-block w-1.5 h-1.5 rounded-full bg-amber-400 align-middle" />}
                     {id === 'ps' && status.psStatus !== 'aberto' && <span className="ml-1 inline-block w-1.5 h-1.5 rounded-full bg-red-400 align-middle" />}
+                    {id === 'notificacoes' && unreadCount > 0 && <span className="ml-1 inline-flex items-center justify-center w-4 h-4 rounded-full bg-sky-500 text-[9px] text-white font-bold align-middle">{unreadCount}</span>}
                   </button>
                 ))}
               </div>
@@ -1089,6 +1200,45 @@
                   />
                   <p className="mt-2 text-xs text-slate-600">{status.generalNotes.length} caracteres · visível para todos os reguladores</p>
                 </Card>
+              )}
+
+              {/* Notificações Tab */}
+              {tab === 'notificacoes' && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs uppercase tracking-wider text-slate-500">Pré-notificações da Regulação</p>
+                    <button onClick={refreshNotifications} className="text-xs text-slate-500 hover:text-sky-400 transition">Atualizar</button>
+                  </div>
+                  {notifications.length === 0 ? (
+                    <Card><p className="text-center text-slate-500 py-6 text-sm">Nenhuma pré-notificação recebida.</p></Card>
+                  ) : (
+                    notifications.map((n) => {
+                      const gravityColors = { critico: 'border-red-500/40 bg-red-500/10', alto: 'border-amber-500/40 bg-amber-500/10', moderado: 'border-sky-500/30 bg-sky-500/5', baixo: 'border-slate-700 bg-slate-900/40' };
+                      const gravityText = { critico: 'text-red-300', alto: 'text-amber-300', moderado: 'text-sky-300', baixo: 'text-slate-400' };
+                      const gc = gravityColors[n.gravity] || gravityColors.baixo;
+                      const gt = gravityText[n.gravity] || gravityText.baixo;
+                      return (
+                        <div key={n.id} className={`rounded-2xl border ${gc} px-4 py-4`}>
+                          <div className="flex items-center justify-between gap-2 mb-2">
+                            <div className="flex items-center gap-2">
+                              {!n.read && <span className="w-2 h-2 rounded-full bg-sky-400 flex-shrink-0" />}
+                              <span className={`text-xs font-semibold uppercase ${gt}`}>{GRAVITY_LABELS[n.gravity] || n.gravity} · {CATEGORY_LABELS[n.category] || n.category}</span>
+                            </div>
+                            <span className="text-[10px] text-slate-600">{n.sentAt ? new Date(n.sentAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''}</span>
+                          </div>
+                          <p className="text-sm text-white font-medium">Paciente {n.patientSex === 'M' ? 'masculino' : 'feminino'}, {n.patientAge} anos</p>
+                          {n.chiefComplaint && <p className="text-xs text-slate-400 mt-1">{n.chiefComplaint}</p>}
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {(n.resources || []).map((r) => (
+                              <span key={r} className="rounded-lg bg-slate-800 px-2 py-0.5 text-[10px] text-slate-300">{RESOURCE_LABELS[r] || r}</span>
+                            ))}
+                          </div>
+                          <p className="mt-2 text-xs text-slate-500">Chegada estimada: ~{n.estimatedArrivalMin} min · Enviado por {n.sentBy}</p>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
               )}
 
               {/* Save bar */}
@@ -1261,6 +1411,7 @@
           freeNotes: '',
         });
         const [step, setStep] = useState(1);
+        const [caseStartedAt, setCaseStartedAt] = useState(Date.now);
 
         useEffect(() => {
           const timer = setInterval(() => setTick(Date.now()), 20000);
@@ -1270,6 +1421,10 @@
         useEffect(() => {
           saveCases(cases);
         }, [cases]);
+
+        useEffect(() => {
+          if (view === 'new-case') setCaseStartedAt(Date.now());
+        }, [view]);
 
         function handleLogin(user) {
           localStorage.setItem(STORAGE_KEYS.session, JSON.stringify(user));
@@ -1629,6 +1784,27 @@
                                   ))}
                                 </div>
                               </div>
+                              {newCase.triageTags.filter((tag) => PROTOCOL_CHECKLISTS[tag]).length > 0 && (
+                                <div className="space-y-3">
+                                  {newCase.triageTags.filter((tag) => PROTOCOL_CHECKLISTS[tag]).map((tag) => {
+                                    const list = PROTOCOL_CHECKLISTS[tag];
+                                    const c = TIMER_COLORS[list.color] || TIMER_COLORS.rose;
+                                    return (
+                                      <div key={tag} className={`rounded-2xl border ${c.border} ${c.bg} p-4`}>
+                                        <p className={`text-xs font-semibold uppercase tracking-wider mb-3 ${c.text}`}>{list.title}</p>
+                                        <div className="space-y-2">
+                                          {list.items.map((item, i) => (
+                                            <div key={i} className="flex items-start gap-2">
+                                              <span className="text-slate-600 text-xs mt-0.5 flex-shrink-0">□</span>
+                                              <p className="text-sm text-slate-300">{item}</p>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
                             </>
                           )}
 
@@ -1663,21 +1839,24 @@
 
                           {step === 4 && (
                             <div className="space-y-4">
-                              <Card className="border-sky-500/20 bg-sky-500/5">
-                                {(() => {
-                                  const preview = classifyCase(newCase);
-                                  return (
-                                    <>
+                              {(() => {
+                                const preview = classifyCase(newCase);
+                                return (
+                                  <>
+                                    {PROTOCOL_WINDOWS[preview.category] && (
+                                      <TherapeuticTimer category={preview.category} startedAt={caseStartedAt} />
+                                    )}
+                                    <Card className="border-sky-500/20 bg-sky-500/5">
                                       <div className="flex flex-wrap gap-2">
                                         <Badge tone={preview.gravity === 'critico' ? 'danger' : preview.gravity === 'alto' ? 'warning' : 'info'}>{GRAVITY_LABELS[preview.gravity]}</Badge>
                                         <Badge tone="info">{CATEGORY_LABELS[preview.category]}</Badge>
                                         <Badge tone="success">{CARE_LINE_LABELS[preview.careLine]}</Badge>
                                       </div>
                                       <p className="mt-4 text-sm text-slate-300">Pré-classificação pronta para gerar recomendação hospitalar.</p>
-                                    </>
-                                  );
-                                })()}
-                              </Card>
+                                    </Card>
+                                  </>
+                                );
+                              })()}
                               <button onClick={() => generateRecommendation()} className="w-full rounded-2xl bg-sky-500 px-4 py-4 font-semibold text-slate-950">Gerar recomendação</button>
                             </div>
                           )}
@@ -1701,7 +1880,7 @@
                   )}
 
                   {view === 'recommendation' && pendingResult && (
-                    <RecommendationView result={pendingResult} onBack={() => setView('new-case')} onSave={saveCase} />
+                    <RecommendationView result={pendingResult} onBack={() => setView('new-case')} onSave={saveCase} session={session} caseStartedAt={caseStartedAt} />
                   )}
 
                   {view === 'history' && (
@@ -1781,14 +1960,34 @@
         );
       }
 
-      function RecommendationView({ result, onBack, onSave }) {
+      function RecommendationView({ result, onBack, onSave, session, caseStartedAt }) {
         const [decisionMode, setDecisionMode] = useState('confirm');
         const [selectedHospitalId, setSelectedHospitalId] = useState(result.alternatives[0]?.hospital.id || result.recommended.hospital.id);
         const [overrideReason, setOverrideReason] = useState('');
+        const [notified, setNotified] = useState(false);
         const mapHospitals = [result.recommended.hospital, ...result.alternatives.map((item) => item.hospital)];
+
+        function handleNotify() {
+          sendNotification({
+            hospitalId: result.recommended.hospital.id,
+            sentBy: session?.name || 'Regulação',
+            caseId: result.caseId,
+            category: result.classification.category,
+            gravity: result.classification.gravity,
+            estimatedArrivalMin: result.recommended.estimatedTimeMin,
+            patientAge: result.caseData.age,
+            patientSex: result.caseData.sex,
+            resources: result.classification.requiredResources,
+            chiefComplaint: result.caseData.chiefComplaint,
+          });
+          setNotified(true);
+        }
 
         return (
           <div className="space-y-6">
+            {PROTOCOL_WINDOWS[result.classification.category] && (
+              <TherapeuticTimer category={result.classification.category} startedAt={caseStartedAt || Date.now()} />
+            )}
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
               <StatCard label="Categoria" value={CATEGORY_LABELS[result.classification.category]} sub={CARE_LINE_LABELS[result.classification.careLine]} />
               <StatCard label="Gravidade" value={GRAVITY_LABELS[result.classification.gravity]} sub={`${result.classification.alerts.length} alertas`} />
@@ -1880,7 +2079,14 @@
                       <textarea className="min-h-[120px] w-full rounded-2xl border border-slate-800 bg-slate-900/80 px-4 py-3 text-white" placeholder="Motivo da divergência" value={overrideReason} onChange={(e) => setOverrideReason(e.target.value)}></textarea>
                     </div>
                   ) : null}
-                  <div className="mt-6 flex gap-3">
+                  <button
+                    onClick={handleNotify}
+                    disabled={notified}
+                    className={`mt-4 w-full rounded-2xl px-4 py-3 text-sm font-semibold transition border ${notified ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300 cursor-default' : 'border-slate-700 bg-slate-800/60 hover:bg-slate-700 text-white'}`}
+                  >
+                    {notified ? `✓ ${result.recommended.hospital.shortName} notificado` : `Pré-notificar ${result.recommended.hospital.shortName}`}
+                  </button>
+                  <div className="mt-3 flex gap-3">
                     <button onClick={onBack} className="flex-1 rounded-2xl border border-slate-800 px-4 py-3 text-sm text-slate-300">Editar caso</button>
                     <button onClick={() => onSave(decisionMode === 'override' ? selectedHospitalId : result.recommended.hospital.id, overrideReason)} className="flex-1 rounded-2xl bg-sky-500 px-4 py-3 text-sm font-semibold text-slate-950">Salvar caso</button>
                   </div>
