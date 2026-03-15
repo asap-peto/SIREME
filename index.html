@@ -94,7 +94,7 @@
           name: 'Dr. Ricardo Silva',
           email: 'r.silva@samu-cwb.gov.br',
           password: 'sireme2024',
-          role: 'Médico Regulador',
+          role: 'regulador',
           initials: 'RS',
           regionCode: 'Curitiba-PR',
         },
@@ -103,10 +103,16 @@
           name: 'Enf. Carla Santos',
           email: 'c.santos@samu-cwb.gov.br',
           password: 'sireme2024',
-          role: 'Reguladora',
+          role: 'regulador',
           initials: 'CS',
           regionCode: 'Curitiba-PR',
         },
+        { id: 'nir-evangelico',   name: 'NIR H. Evangélico',  email: 'nir@evangelico.com.br',                      password: 'nir2024', role: 'hospital_nir', initials: 'HE', hospitalId: 'h-evangelico',   color: '#7C3AED' },
+        { id: 'nir-boa-vista',    name: 'NIR UPA Boa Vista',  email: 'nir@upa-boavista.curitiba.pr.gov.br',        password: 'nir2024', role: 'hospital_nir', initials: 'BV', hospitalId: 'upa-boa-vista',  color: '#EA580C' },
+        { id: 'nir-hc-ufpr',      name: 'NIR HC-UFPR',        email: 'nir@hc.ufpr.br',                             password: 'nir2024', role: 'hospital_nir', initials: 'HC', hospitalId: 'hc-ufpr',        color: '#2563EB' },
+        { id: 'nir-trabalhador',  name: 'NIR H. Trabalhador', email: 'nir@trabalhador.pr.gov.br',                  password: 'nir2024', role: 'hospital_nir', initials: 'HT', hospitalId: 'h-trabalhador',  color: '#D97706' },
+        { id: 'nir-cajuru',       name: 'NIR HU Cajuru',      email: 'nir@cajuru.pucpr.br',                        password: 'nir2024', role: 'hospital_nir', initials: 'CA', hospitalId: 'h-cajuru',       color: '#DC2626' },
+        { id: 'nir-pp',           name: 'NIR Pequeno Príncipe',email: 'nir@pequenoprincipe.org.br',                password: 'nir2024', role: 'hospital_nir', initials: 'PP', hospitalId: 'h-pequeno-principe', color: '#DB2777' },
       ];
 
       const RESOURCE_LABELS = {
@@ -368,6 +374,27 @@
           baseScore: 48,
           phone: '(41) 3082-5750',
           regulationNotes: 'Adequada para avaliação inicial e estabilização de curto prazo.',
+        },
+        {
+          id: 'upa-boa-vista',
+          name: 'UPA 24h Boa Vista',
+          shortName: 'UPA Boa Vista',
+          type: 'upa',
+          neighborhood: 'Boa Vista',
+          address: 'Rua Dep. Heitor Alencar Furtado, 4315',
+          lat: -25.3961,
+          lng: -49.2521,
+          resources: ['TOMOGRAFIA', 'CIRURGIA_GERAL', 'BANCO_DE_SANGUE'],
+          offers: ['Estabilização', 'Observação adulto', 'Tomografia', 'Banco de sangue'],
+          badges: ['UPA 24h', 'Norte'],
+          cnes: '6716702',
+          totalBeds: 34,
+          icuBeds: 0,
+          occupancyPercent: 58,
+          loadFactor: 5,
+          baseScore: 51,
+          phone: '(41) 3082-5810',
+          regulationNotes: 'Cobertura da rede norte; banco de sangue disponível para suporte inicial.',
         },
       ];
 
@@ -837,10 +864,253 @@
         return <div ref={ref} style={{ height, width: '100%' }} className="overflow-hidden rounded-3xl" />;
       }
 
+      const NIR_STORAGE_KEY = 'sireme_hospital_nir_status';
+
+      function getNirStatusFromStorage(hospitalId) {
+        try { const all = JSON.parse(localStorage.getItem(NIR_STORAGE_KEY) || '{}'); return all[hospitalId] || null; }
+        catch { return null; }
+      }
+
+      function saveNirStatusToStorage(status) {
+        try {
+          const all = JSON.parse(localStorage.getItem(NIR_STORAGE_KEY) || '{}');
+          all[status.hospitalId] = { ...status, updatedAt: new Date().toISOString() };
+          localStorage.setItem(NIR_STORAGE_KEY, JSON.stringify(all));
+        } catch {}
+      }
+
+      function NumberStepper({ label, value, onChange }) {
+        return (
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+            <p className="text-xs text-slate-400 mb-3">{label}</p>
+            <div className="flex items-center gap-3">
+              <button type="button" onClick={() => onChange(Math.max(0, value - 1))} className="h-9 w-9 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xl flex items-center justify-center transition">−</button>
+              <span className="w-12 text-center font-display text-2xl font-bold text-white">{value}</span>
+              <button type="button" onClick={() => onChange(value + 1)} className="h-9 w-9 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xl flex items-center justify-center transition">+</button>
+            </div>
+          </div>
+        );
+      }
+
+      function HospitalNirScreen({ session, onLogout }) {
+        const hospital = HOSPITALS.find((h) => h.id === session.hospitalId);
+        const isUpa = hospital && hospital.type === 'upa';
+
+        const [saved, setSaved] = useState(false);
+        const [tab, setTab] = useState('ps');
+        const [status, setStatus] = useState(() => {
+          const existing = session.hospitalId ? getNirStatusFromStorage(session.hospitalId) : null;
+          return existing || {
+            hospitalId: session.hospitalId,
+            updatedAt: null,
+            bedsGeneral: 0,
+            bedsIcuAdult: 0,
+            bedsIcuPediatric: 0,
+            bedsIcuNeonatal: 0,
+            bedsObstetric: 0,
+            psStatus: 'aberto',
+            psQueueSize: 0,
+            psWaitTimeMin: 0,
+            psRestrictionReason: '',
+            brokenEquipment: [],
+            generalNotes: '',
+          };
+        });
+        const [newEquipName, setNewEquipName] = useState('');
+        const [newEquipImpact, setNewEquipImpact] = useState('medio');
+
+        function update(key, val) { setStatus((s) => ({ ...s, [key]: val })); }
+
+        function handleSave() {
+          saveNirStatusToStorage({ ...status, updatedBy: session.name });
+          setSaved(true);
+          setTimeout(() => setSaved(false), 3000);
+        }
+
+        function addEquipment() {
+          if (!newEquipName.trim()) return;
+          const item = { id: `eq-${Date.now()}`, name: newEquipName.trim(), impact: newEquipImpact, since: new Date().toISOString() };
+          update('brokenEquipment', [...status.brokenEquipment, item]);
+          setNewEquipName('');
+          setNewEquipImpact('medio');
+        }
+
+        function removeEquipment(id) {
+          update('brokenEquipment', status.brokenEquipment.filter((e) => e.id !== id));
+        }
+
+        const PS_COLORS = { aberto: 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300', restrito: 'bg-amber-500/15 border-amber-500/40 text-amber-300', fechado: 'bg-red-500/15 border-red-500/40 text-red-300' };
+        const IMPACT_COLORS = { baixo: 'bg-sky-500/15 text-sky-300', medio: 'bg-amber-500/15 text-amber-300', alto: 'bg-red-500/15 text-red-300' };
+        const tabs = [['ps', isUpa ? 'PS / Atendimento' : 'Pronto-Socorro'], ['leitos', isUpa ? 'Observação' : 'Leitos'], ['equipamentos', 'Equipamentos'], ['notas', 'Observações']];
+
+        if (!hospital) return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400">Hospital não encontrado.</div>;
+
+        return (
+          <div className="min-h-screen bg-slate-950">
+            {/* Header */}
+            <div className="sticky top-0 z-20 border-b border-slate-800 bg-slate-950/95 px-4 py-3">
+              <div className="mx-auto max-w-2xl flex items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="font-display font-bold text-white">{hospital.shortName}</p>
+                    {isUpa && <span className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-300 font-semibold">UPA</span>}
+                    <span className={`rounded-md border px-2 py-0.5 text-[10px] font-semibold ${PS_COLORS[status.psStatus]}`}>PS {status.psStatus}</span>
+                  </div>
+                  <p className="text-xs text-slate-500">Modo NIR · {hospital.neighborhood}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {saved && <span className="text-xs text-emerald-400">✓ Salvo</span>}
+                  <button onClick={handleSave} className="rounded-xl bg-sky-600 hover:bg-sky-500 px-4 py-2 text-sm font-semibold text-white transition">{saved ? 'Salvo!' : 'Salvar'}</button>
+                  <button onClick={onLogout} className="rounded-xl border border-slate-700 px-3 py-2 text-xs text-slate-400 hover:text-red-400 transition">Sair</button>
+                </div>
+              </div>
+              {/* Tab nav */}
+              <div className="mx-auto max-w-2xl mt-3 flex gap-1">
+                {tabs.map(([id, label]) => (
+                  <button key={id} onClick={() => setTab(id)}
+                    className={`flex-1 rounded-xl py-2 text-xs font-semibold transition ${tab === id ? 'bg-sky-500/20 text-sky-300 border border-sky-500/30' : 'text-slate-500 hover:text-slate-300'}`}>
+                    {label}
+                    {id === 'equipamentos' && status.brokenEquipment.length > 0 && <span className="ml-1 inline-block w-1.5 h-1.5 rounded-full bg-amber-400 align-middle" />}
+                    {id === 'ps' && status.psStatus !== 'aberto' && <span className="ml-1 inline-block w-1.5 h-1.5 rounded-full bg-red-400 align-middle" />}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="mx-auto max-w-2xl px-4 py-6 space-y-4">
+
+              {/* PS Tab */}
+              {tab === 'ps' && (
+                <Card>
+                  <p className="text-xs uppercase tracking-wider text-slate-500 mb-4">Status do {isUpa ? 'Atendimento' : 'Pronto-Socorro'}</p>
+                  <div className="grid grid-cols-3 gap-2 mb-5">
+                    {[['aberto','Aberto','Recebendo todos'],['restrito','Restrito','Casos selecionados'],['fechado','Fechado','Não recebe']].map(([val, label, desc]) => (
+                      <button key={val} type="button" onClick={() => update('psStatus', val)}
+                        className={`rounded-2xl border py-3 px-2 text-center transition ${status.psStatus === val ? PS_COLORS[val] : 'border-slate-800 bg-slate-900/60 text-slate-500 hover:border-slate-700'}`}>
+                        <div className="font-semibold text-sm">{label}</div>
+                        <div className="text-[10px] opacity-70 mt-0.5">{desc}</div>
+                      </button>
+                    ))}
+                  </div>
+
+                  {status.psStatus !== 'aberto' && (
+                    <div className="mb-4">
+                      <label className="text-xs text-slate-400 mb-1.5 block">Motivo da {status.psStatus === 'fechado' ? 'interdição' : 'restrição'} <span className="text-red-400">*</span></label>
+                      <textarea
+                        rows={2}
+                        value={status.psRestrictionReason}
+                        onChange={(e) => update('psRestrictionReason', e.target.value)}
+                        placeholder={status.psStatus === 'fechado' ? 'Ex: Superlotação crítica, aguardando transferências...' : 'Ex: Apenas casos leves, sem vagas de observação...'}
+                        className="w-full rounded-2xl border border-amber-500/30 bg-slate-900/80 px-4 py-3 text-sm text-white outline-none resize-none placeholder-slate-600"
+                      />
+                      <p className="text-[10px] text-slate-600 mt-1">Visível para toda a central de regulação.</p>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumberStepper label={isUpa ? 'Pacientes em atendimento' : 'Pacientes na fila'} value={status.psQueueSize} onChange={(v) => update('psQueueSize', v)} />
+                    <NumberStepper label="Espera estimada (min)" value={status.psWaitTimeMin} onChange={(v) => update('psWaitTimeMin', v)} />
+                  </div>
+                </Card>
+              )}
+
+              {/* Leitos Tab */}
+              {tab === 'leitos' && (
+                <Card>
+                  <div className="flex items-center justify-between mb-4">
+                    <p className="text-xs uppercase tracking-wider text-slate-500">{isUpa ? 'Vagas de Observação' : 'Leitos Disponíveis'}</p>
+                    <span className="font-display text-2xl font-bold text-white">{status.bedsGeneral + status.bedsIcuAdult + status.bedsIcuPediatric + status.bedsIcuNeonatal + status.bedsObstetric} <span className="text-xs text-slate-500 font-normal">total livre</span></span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumberStepper label={isUpa ? 'Leitos de observação' : 'Clínicos / Gerais'} value={status.bedsGeneral} onChange={(v) => update('bedsGeneral', v)} />
+                    {hospital.resources.includes('UTI_ADULTO') && <NumberStepper label="UTI Adulto" value={status.bedsIcuAdult} onChange={(v) => update('bedsIcuAdult', v)} />}
+                    {hospital.resources.includes('UTI_PEDIATRICA') && <NumberStepper label="UTI Pediátrica" value={status.bedsIcuPediatric} onChange={(v) => update('bedsIcuPediatric', v)} />}
+                    {hospital.resources.includes('UTI_NEONATAL') && <NumberStepper label="UTI Neonatal" value={status.bedsIcuNeonatal} onChange={(v) => update('bedsIcuNeonatal', v)} />}
+                    {hospital.resources.includes('MATERNIDADE') && <NumberStepper label="Obstétricos" value={status.bedsObstetric} onChange={(v) => update('bedsObstetric', v)} />}
+                  </div>
+                  <p className="mt-4 text-xs text-slate-600">Referência: {hospital.totalBeds} leitos totais{hospital.icuBeds > 0 ? ` · ${hospital.icuBeds} UTI` : ''}</p>
+                </Card>
+              )}
+
+              {/* Equipamentos Tab */}
+              {tab === 'equipamentos' && (
+                <div className="space-y-4">
+                  <Card>
+                    <p className="text-xs uppercase tracking-wider text-slate-500 mb-4">Registrar Problema</p>
+                    <div className="space-y-3">
+                      <input
+                        value={newEquipName}
+                        onChange={(e) => setNewEquipName(e.target.value)}
+                        placeholder="Nome do equipamento (Ex: Tomógrafo 1, Respirador UTI 3...)"
+                        className="w-full rounded-2xl border border-slate-800 bg-slate-900/80 px-4 py-3 text-sm text-white outline-none placeholder-slate-600 focus:border-sky-500"
+                      />
+                      <div className="grid grid-cols-3 gap-2">
+                        {[['baixo','Baixo'],['medio','Médio'],['alto','Alto']].map(([val, label]) => (
+                          <button key={val} type="button" onClick={() => setNewEquipImpact(val)}
+                            className={`rounded-xl py-2 text-xs font-semibold border transition ${newEquipImpact === val ? IMPACT_COLORS[val] + ' border-current/30' : 'border-slate-800 text-slate-500'}`}>
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                      <button onClick={addEquipment} disabled={!newEquipName.trim()} className="w-full rounded-2xl bg-rose-600 hover:bg-rose-500 disabled:opacity-40 px-4 py-2.5 text-sm font-semibold text-white transition">
+                        Registrar Problema
+                      </button>
+                    </div>
+                  </Card>
+
+                  {status.brokenEquipment.length === 0 ? (
+                    <Card><p className="text-center text-slate-500 py-6">Nenhum equipamento com problema registrado.</p></Card>
+                  ) : (
+                    status.brokenEquipment.map((item) => (
+                      <div key={item.id} className="rounded-2xl border border-slate-800 bg-slate-900/60 px-4 py-4 flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-white">{item.name}</p>
+                          <span className={`mt-1 inline-block rounded-lg px-2 py-0.5 text-xs ${IMPACT_COLORS[item.impact]}`}>Impacto {item.impact}</span>
+                        </div>
+                        <button onClick={() => removeEquipment(item.id)} className="text-xs text-emerald-400 hover:text-emerald-300 border border-emerald-500/30 rounded-lg px-3 py-1.5 transition">
+                          ✓ Resolvido
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+
+              {/* Notas Tab */}
+              {tab === 'notas' && (
+                <Card>
+                  <p className="text-xs uppercase tracking-wider text-slate-500 mb-4">Observações para a Central</p>
+                  <textarea
+                    rows={8}
+                    value={status.generalNotes}
+                    onChange={(e) => update('generalNotes', e.target.value)}
+                    placeholder="Informe restrições operacionais, alertas de capacidade, situações especiais que a central de regulação precisa saber..."
+                    className="w-full rounded-2xl border border-slate-800 bg-slate-900/80 px-4 py-3 text-sm text-white outline-none resize-none placeholder-slate-600 focus:border-sky-500"
+                  />
+                  <p className="mt-2 text-xs text-slate-600">{status.generalNotes.length} caracteres · visível para todos os reguladores</p>
+                </Card>
+              )}
+
+              {/* Save bar */}
+              <div className="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-900/60 px-5 py-4">
+                <p className="text-sm text-slate-400">{status.updatedAt ? `Última atualização: ${new Date(status.updatedAt).toLocaleTimeString('pt-BR')}` : 'Nenhuma atualização enviada ainda'}</p>
+                <button onClick={handleSave} className="rounded-xl bg-sky-600 hover:bg-sky-500 px-5 py-2 text-sm font-semibold text-white transition">
+                  {saved ? '✓ Salvo!' : 'Salvar atualização'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
       function LoginScreen({ onLogin }) {
         const [email, setEmail] = useState('');
         const [password, setPassword] = useState('');
         const [error, setError] = useState('');
+        const [mode, setMode] = useState('regulacao');
+
+        const regulators = USERS.filter((u) => u.role === 'regulador');
+        const hospitalUsers = USERS.filter((u) => u.role === 'hospital_nir');
 
         function fill(user) {
           setEmail(user.email);
@@ -852,7 +1122,7 @@
           event.preventDefault();
           const user = USERS.find((item) => item.email === email && item.password === password);
           if (!user) {
-            setError('Credenciais inválidas.');
+            setError('Credenciais inválidas. Verifique e-mail e senha.');
             return;
           }
           onLogin(user);
@@ -879,31 +1149,81 @@
                 </Card>
 
                 <Card className="max-w-lg">
-                  <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Acesso</p>
-                  <h2 className="mt-2 font-display text-2xl font-semibold text-white">Entrar no SIREME</h2>
-                  <form className="mt-6 space-y-4" onSubmit={submit}>
+                  {/* Mode toggle */}
+                  <div className="flex gap-1 rounded-2xl border border-slate-800 bg-slate-900/60 p-1 mb-5">
+                    <button
+                      onClick={() => { setMode('regulacao'); setEmail(''); setPassword(''); setError(''); }}
+                      className={`flex-1 rounded-xl py-2 text-xs font-semibold transition ${mode === 'regulacao' ? 'bg-sky-500 text-slate-950' : 'text-slate-400 hover:text-white'}`}
+                    >
+                      Central de Regulação
+                    </button>
+                    <button
+                      onClick={() => { setMode('hospital'); setEmail(''); setPassword(''); setError(''); }}
+                      className={`flex-1 rounded-xl py-2 text-xs font-semibold transition ${mode === 'hospital' ? 'bg-violet-500 text-white' : 'text-slate-400 hover:text-white'}`}
+                    >
+                      Hospital / UPA
+                    </button>
+                  </div>
+
+                  <form className="space-y-4" onSubmit={submit}>
                     <div>
                       <label className="mb-2 block text-sm text-slate-400">E-mail</label>
-                      <input className="w-full rounded-2xl border border-slate-800 bg-slate-900/80 px-4 py-3 text-white outline-none" value={email} onChange={(e) => setEmail(e.target.value)} />
+                      <input
+                        className="w-full rounded-2xl border border-slate-800 bg-slate-900/80 px-4 py-3 text-white outline-none focus:border-sky-500"
+                        placeholder={mode === 'hospital' ? 'nir@hospital.com.br' : 'seu@samu.gov.br'}
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                      />
                     </div>
                     <div>
                       <label className="mb-2 block text-sm text-slate-400">Senha</label>
-                      <input type="password" className="w-full rounded-2xl border border-slate-800 bg-slate-900/80 px-4 py-3 text-white outline-none" value={password} onChange={(e) => setPassword(e.target.value)} />
+                      <input
+                        type="password"
+                        className="w-full rounded-2xl border border-slate-800 bg-slate-900/80 px-4 py-3 text-white outline-none focus:border-sky-500"
+                        placeholder="••••••••"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                      />
                     </div>
                     {error ? <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">{error}</div> : null}
-                    <button className="w-full rounded-2xl bg-sky-500 px-4 py-3 font-semibold text-slate-950 transition hover:bg-sky-400">Entrar</button>
+                    <button
+                      className={`w-full rounded-2xl px-4 py-3 font-semibold transition ${mode === 'hospital' ? 'bg-violet-600 text-white hover:bg-violet-500' : 'bg-sky-500 text-slate-950 hover:bg-sky-400'}`}
+                    >
+                      {mode === 'hospital' ? 'Entrar como Hospital / UPA' : 'Entrar na Central'}
+                    </button>
                   </form>
-                  <div className="mt-6 space-y-3">
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Acesso demo</p>
-                    {USERS.map((user) => (
-                      <button key={user.id} onClick={() => fill(user)} className="flex w-full items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900/60 px-4 py-3 text-left hover:border-slate-700">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-sky-500/20 font-semibold text-sky-300">{user.initials}</div>
-                        <div>
-                          <div className="text-sm font-medium text-white">{user.name}</div>
-                          <div className="text-xs text-slate-500">{user.role} · SAMU Curitiba</div>
+
+                  {/* Demo profiles */}
+                  <div className="mt-6">
+                    {mode === 'regulacao' ? (
+                      <div className="space-y-3">
+                        <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Perfis demo — Regulação</p>
+                        {regulators.map((user) => (
+                          <button key={user.id} onClick={() => fill(user)} className="flex w-full items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900/60 px-4 py-3 text-left hover:border-slate-700">
+                            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-sky-500/20 font-semibold text-sky-300">{user.initials}</div>
+                            <div>
+                              <div className="text-sm font-medium text-white">{user.name}</div>
+                              <div className="text-xs text-slate-500">Regulação · SAMU Curitiba</div>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.18em] text-slate-500 mb-3">Perfis demo — Hospital / UPA · senha: <span className="text-violet-400">nir2024</span></p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {hospitalUsers.map((user) => (
+                            <button key={user.id} onClick={() => fill(user)} className="flex items-center gap-2 rounded-2xl border border-slate-800 bg-slate-900/60 px-3 py-3 text-left hover:border-violet-500/40 transition">
+                              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg font-bold text-xs text-white" style={{ backgroundColor: user.color }}>{user.initials}</div>
+                              <div className="min-w-0">
+                                <div className="text-xs font-medium text-white truncate">{user.name}</div>
+                                <div className="text-[10px] text-slate-500">NIR</div>
+                              </div>
+                            </button>
+                          ))}
                         </div>
-                      </button>
-                    ))}
+                      </div>
+                    )}
                   </div>
                 </Card>
               </div>
@@ -1045,6 +1365,8 @@
         }, [cases]);
 
         if (!session) return <LoginScreen onLogin={handleLogin} />;
+
+        if (session.role === 'hospital_nir') return <HospitalNirScreen session={session} onLogout={handleLogout} />;
 
         return (
           <div className="min-h-screen">
