@@ -1,9 +1,20 @@
 import type { FormEvent } from 'react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Activity, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { Activity, Eye, EyeOff, AlertCircle, Hospital, ChevronDown, ChevronUp } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { Button } from '../components/ui';
+
+const DEMO_REGULATORS = [
+  { email: 'r.silva@samu-cwb.gov.br', password: 'sireme2024', name: 'Dr. Ricardo Silva', role: 'Médico Regulador · SAMU Curitiba', initials: 'RS', color: 'bg-blue-600/70' },
+  { email: 'c.santos@samu-cwb.gov.br', password: 'sireme2024', name: 'Enf. Carla Santos', role: 'Regulador · SAMU Curitiba', initials: 'CS', color: 'bg-emerald-600/70' },
+];
+
+const DEMO_HOSPITALS = [
+  { email: 'nir@hc.ufpr.br', password: 'nir2024', name: 'NIR HC-UFPR', role: 'Hospital · NIR', initials: 'HC', color: 'bg-violet-600/70' },
+  { email: 'nir@trabalhador.pr.gov.br', password: 'nir2024', name: 'NIR H. Trabalhador', role: 'Hospital · NIR', initials: 'HT', color: 'bg-orange-600/70' },
+  { email: 'nir@cajuru.pucpr.br', password: 'nir2024', name: 'NIR HU Cajuru', role: 'Hospital · NIR', initials: 'CA', color: 'bg-rose-600/70' },
+];
 
 export function LoginPage() {
   const { login } = useApp();
@@ -13,25 +24,25 @@ export function LoginPage() {
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showHospitals, setShowHospitals] = useState(false);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
     await new Promise(r => setTimeout(r, 800)); // simulate latency
-    const ok = login(email, password);
+    const loggedUser = login(email, password);
     setLoading(false);
-    if (ok) navigate('/dashboard');
-    else setError('Credenciais inválidas. Verifique e-mail e senha.');
+    if (loggedUser) {
+      navigate(loggedUser.role === 'hospital_nir' ? '/hospital-nir' : '/dashboard');
+    } else {
+      setError('Credenciais inválidas. Verifique e-mail e senha.');
+    }
   };
 
-  const fillDemo = (idx: number) => {
-    const users = [
-      { email: 'r.silva@samu-cwb.gov.br', password: 'sireme2024' },
-      { email: 'c.santos@samu-cwb.gov.br', password: 'sireme2024' },
-    ];
-    setEmail(users[idx].email);
-    setPassword(users[idx].password);
+  const fillCredentials = (u: { email: string; password: string }) => {
+    setEmail(u.email);
+    setPassword(u.password);
     setError('');
   };
 
@@ -44,7 +55,6 @@ export function LoginPage() {
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[400px] bg-blue-600/5 rounded-full blur-3xl" />
         <div className="absolute bottom-0 right-0 w-[400px] h-[400px] bg-indigo-600/5 rounded-full blur-3xl" />
         <div className="absolute top-1/3 left-0 w-[300px] h-[300px] bg-cyan-600/3 rounded-full blur-3xl" />
-        {/* Grid */}
         <div className="absolute inset-0 opacity-[0.015]"
           style={{ backgroundImage: 'linear-gradient(#94A3B8 1px, transparent 1px), linear-gradient(90deg, #94A3B8 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
       </div>
@@ -65,7 +75,7 @@ export function LoginPage() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-xs font-medium text-slate-400 font-body mb-1.5">E-mail / CRM</label>
+              <label className="block text-xs font-medium text-slate-400 font-body mb-1.5">E-mail</label>
               <input
                 type="email"
                 className={inputCls}
@@ -109,29 +119,52 @@ export function LoginPage() {
           </form>
         </div>
 
-        {/* Demo users */}
+        {/* Demo users - Regulação */}
         <div className="mt-4 bg-slate-900/50 rounded-xl border border-slate-800/60 p-4">
-          <p className="text-slate-500 text-xs font-body text-center mb-3">Acesso demo — clique para preencher</p>
+          <p className="text-slate-500 text-xs font-body text-center mb-3">Central de Regulação — acesso demo</p>
           <div className="space-y-2">
-            <button onClick={() => fillDemo(0)} className="w-full flex items-center gap-3 p-2.5 rounded-lg hover:bg-slate-800/60 transition-all group">
-              <div className="w-7 h-7 rounded-full bg-blue-600/70 flex items-center justify-center flex-shrink-0">
-                <span className="text-white text-[10px] font-bold">RS</span>
-              </div>
-              <div className="text-left min-w-0">
-                <p className="text-slate-300 text-xs font-medium font-body">Dr. Ricardo Silva</p>
-                <p className="text-slate-500 text-[10px] font-body">Médico Regulador · SAMU Curitiba</p>
-              </div>
-            </button>
-            <button onClick={() => fillDemo(1)} className="w-full flex items-center gap-3 p-2.5 rounded-lg hover:bg-slate-800/60 transition-all group">
-              <div className="w-7 h-7 rounded-full bg-emerald-600/70 flex items-center justify-center flex-shrink-0">
-                <span className="text-white text-[10px] font-bold">CS</span>
-              </div>
-              <div className="text-left min-w-0">
-                <p className="text-slate-300 text-xs font-medium font-body">Enf. Carla Santos</p>
-                <p className="text-slate-500 text-[10px] font-body">Regulador · SAMU Curitiba</p>
-              </div>
-            </button>
+            {DEMO_REGULATORS.map((u) => (
+              <button key={u.email} onClick={() => fillCredentials(u)} className="w-full flex items-center gap-3 p-2.5 rounded-lg hover:bg-slate-800/60 transition-all">
+                <div className={`w-7 h-7 rounded-full ${u.color} flex items-center justify-center flex-shrink-0`}>
+                  <span className="text-white text-[10px] font-bold">{u.initials}</span>
+                </div>
+                <div className="text-left min-w-0">
+                  <p className="text-slate-300 text-xs font-medium font-body">{u.name}</p>
+                  <p className="text-slate-500 text-[10px] font-body">{u.role}</p>
+                </div>
+              </button>
+            ))}
           </div>
+        </div>
+
+        {/* Demo users - Hospitais NIR */}
+        <div className="mt-3 bg-slate-900/50 rounded-xl border border-slate-800/60 overflow-hidden">
+          <button
+            onClick={() => setShowHospitals(!showHospitals)}
+            className="w-full flex items-center justify-between gap-3 px-4 py-3 hover:bg-slate-800/40 transition-all"
+          >
+            <div className="flex items-center gap-2">
+              <Hospital size={13} className="text-violet-400" />
+              <p className="text-slate-500 text-xs font-body">Modo NIR Hospitalar — acesso demo</p>
+            </div>
+            {showHospitals ? <ChevronUp size={13} className="text-slate-600" /> : <ChevronDown size={13} className="text-slate-600" />}
+          </button>
+
+          {showHospitals && (
+            <div className="px-4 pb-4 space-y-2 border-t border-slate-800/60 pt-3">
+              {DEMO_HOSPITALS.map((u) => (
+                <button key={u.email} onClick={() => fillCredentials(u)} className="w-full flex items-center gap-3 p-2.5 rounded-lg hover:bg-slate-800/60 transition-all">
+                  <div className={`w-7 h-7 rounded-full ${u.color} flex items-center justify-center flex-shrink-0`}>
+                    <span className="text-white text-[10px] font-bold">{u.initials}</span>
+                  </div>
+                  <div className="text-left min-w-0">
+                    <p className="text-slate-300 text-xs font-medium font-body">{u.name}</p>
+                    <p className="text-slate-500 text-[10px] font-body">{u.role} · senha: nir2024</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         <p className="text-center text-slate-700 text-xs font-body mt-5">
