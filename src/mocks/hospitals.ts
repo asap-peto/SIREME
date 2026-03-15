@@ -276,6 +276,27 @@ const HOSPITALS_BASE: BaseHospital[] = [
     phone: '(41) 3350-9600',
     color: '#F97316',
   },
+  {
+    id: 'upa-boa-vista',
+    name: 'UPA 24h Boa Vista',
+    shortName: 'UPA Boa Vista',
+    type: 'upa',
+    address: 'Rua Deputado Heitor Alencar Furtado, 4315',
+    neighborhood: 'Boa Vista',
+    lat: -25.3961,
+    lng: -49.2521,
+    resources: ['TOMOGRAFIA', 'CIRURGIA_GERAL', 'BANCO_DE_SANGUE'],
+    specialties: ['Urgência e Emergência', 'Observação'],
+    occupancy: 'media',
+    occupancyPercent: 58,
+    baseScore: 51,
+    totalBeds: 34,
+    icuBeds: 0,
+    cnes: '6716702',
+    badges: ['UPA 24h', 'Norte'],
+    phone: '(41) 3082-5810',
+    color: '#F97316',
+  },
 ];
 
 const CARE_LINES: Record<string, CareLine[]> = {
@@ -292,6 +313,7 @@ const CARE_LINES: Record<string, CareLine[]> = {
   'upa-boqueirao': ['linha_clinica'],
   'upa-cic': ['linha_clinica'],
   'upa-pinheirinho': ['linha_clinica'],
+  'upa-boa-vista': ['linha_clinica', 'linha_trauma'],
 };
 
 const OFFERS: Record<string, string[]> = {
@@ -308,6 +330,7 @@ const OFFERS: Record<string, string[]> = {
   'upa-boqueirao': ['Estabilização', 'Sala vermelha', 'Tomografia', 'Monitorização inicial'],
   'upa-cic': ['Estabilização', 'Observação clínica', 'Tomografia', 'Rede oeste'],
   'upa-pinheirinho': ['Estabilização', 'Sala vermelha', 'Tomografia', 'Rede sul'],
+  'upa-boa-vista': ['Estabilização', 'Observação adulto', 'Tomografia', 'Rede norte', 'Banco de sangue'],
 };
 
 const REGULATION_NOTES: Record<string, string> = {
@@ -324,6 +347,7 @@ const REGULATION_NOTES: Record<string, string> = {
   'upa-boqueirao': 'Boa cobertura da rede sul para primeiros cuidados e reavaliação.',
   'upa-cic': 'Suporte inicial da rede oeste, útil para transferência regulada após estabilização.',
   'upa-pinheirinho': 'Porta rápida da rede sul; útil para estabilização e articulação de vaga.',
+  'upa-boa-vista': 'Cobertura da rede norte; banco de sangue disponível para suporte inicial.',
 };
 
 const LOAD_FACTORS: Record<string, number> = {
@@ -340,6 +364,7 @@ const LOAD_FACTORS: Record<string, number> = {
   'upa-boqueirao': 3,
   'upa-cic': 5,
   'upa-pinheirinho': 4,
+  'upa-boa-vista': 5,
 };
 
 export const HOSPITALS: Hospital[] = HOSPITALS_BASE.map((hospital) => ({
