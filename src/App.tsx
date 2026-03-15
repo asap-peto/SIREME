@@ -10,6 +10,7 @@ import { HistoryPage } from './pages/HistoryPage';
 import { HospitalsPage } from './pages/HospitalsPage';
 import { SimulationPage } from './pages/SimulationPage';
 import { NirPage } from './pages/NirPage';
+import { HospitalNirPage } from './pages/HospitalNirPage';
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const { user } = useApp();
@@ -19,11 +20,30 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 
 function AppRoutes() {
   const { user } = useApp();
+
+  // Determine default redirect based on role
+  const defaultRedirect = user?.role === 'hospital_nir' ? '/hospital-nir' : '/dashboard';
+
   return (
     <Routes>
-      <Route path="/login" element={user ? <Navigate to="/dashboard" replace /> : <LoginPage />} />
+      <Route
+        path="/login"
+        element={user ? <Navigate to={defaultRedirect} replace /> : <LoginPage />}
+      />
+
+      {/* Hospital NIR standalone route (no sidebar layout) */}
+      <Route
+        path="/hospital-nir"
+        element={
+          <ProtectedRoute>
+            {user?.role === 'hospital_nir' ? <HospitalNirPage /> : <Navigate to="/dashboard" replace />}
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Main app routes (with sidebar layout) */}
       <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-        <Route index element={<Navigate to="/dashboard" replace />} />
+        <Route index element={<Navigate to={defaultRedirect} replace />} />
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="cases/new" element={<NewCasePage />} />
         <Route path="recommendation" element={<RecommendationPage />} />
@@ -32,7 +52,8 @@ function AppRoutes() {
         <Route path="nir" element={<NirPage />} />
         <Route path="simulation" element={<SimulationPage />} />
       </Route>
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+
+      <Route path="*" element={<Navigate to={defaultRedirect} replace />} />
     </Routes>
   );
 }

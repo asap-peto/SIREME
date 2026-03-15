@@ -206,10 +206,42 @@ export interface SavedCase {
 export interface User {
   id: string;
   name: string;
-  role: 'regulador' | 'medico_regulador' | 'admin';
+  role: 'regulador' | 'medico_regulador' | 'admin' | 'hospital_nir';
   crm?: string;
   initials: string;
   regionCode: string;
+  hospitalId?: string; // only for hospital_nir role
+}
+
+export type PsStatus = 'aberto' | 'restrito' | 'fechado';
+export type EquipmentImpact = 'baixo' | 'medio' | 'alto';
+
+export interface BrokenEquipmentItem {
+  id: string;
+  name: string;
+  since: string;
+  expectedReturn?: string;
+  impact: EquipmentImpact;
+}
+
+export interface HospitalNirStatus {
+  hospitalId: string;
+  updatedAt: string;
+  updatedBy: string;
+  // Beds
+  bedsGeneral: number;
+  bedsIcuAdult: number;
+  bedsIcuPediatric: number;
+  bedsIcuNeonatal: number;
+  bedsObstetric: number;
+  // Emergency (PS)
+  psStatus: PsStatus;
+  psQueueSize: number;
+  psWaitTimeMin: number;
+  // Equipment
+  brokenEquipment: BrokenEquipmentItem[];
+  // Notes
+  generalNotes: string;
 }
 
 export interface OriginOption {

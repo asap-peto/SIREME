@@ -108,7 +108,7 @@ export const CATEGORY_LABELS: Record<ClinicalCategory, string> = {
 };
 
 export function resolveCareLine(category: ClinicalCategory): CareLine {
-  return {
+  return ({
     cardiologico: 'linha_cardio',
     neurologico: 'linha_neuro',
     trauma: 'linha_trauma',
@@ -116,7 +116,7 @@ export function resolveCareLine(category: ClinicalCategory): CareLine {
     obstetrico: 'linha_materno_infantil',
     pediatrico: 'linha_pediatrica',
     clinico_geral: 'linha_clinica',
-  }[category];
+  } as Record<ClinicalCategory, CareLine>)[category];
 }
 
 export const CARE_LINE_LABELS: Record<CareLine, string> = {

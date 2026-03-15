@@ -9,7 +9,7 @@ interface AppState {
 }
 
 interface AppContextValue extends AppState {
-  login: (email: string, password: string) => boolean;
+  login: (email: string, password: string) => User | null;
   logout: () => void;
   setPendingResult: (r: RecommendationResult | null) => void;
   toggleDarkMode: () => void;
@@ -33,14 +33,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [pendingResult, setPendingResult] = useState<RecommendationResult | null>(null);
   const [darkMode, setDarkMode] = useState(true);
 
-  const login = useCallback((email: string, password: string): boolean => {
+  const login = useCallback((email: string, password: string): User | null => {
     const found = MOCK_USERS.find(u => u.email === email && u.password === password);
-    if (!found) return false;
+    if (!found) return null;
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password: _pw, email: _em, ...userObj } = found;
     setUser(userObj);
     localStorage.setItem(SESSION_KEY, JSON.stringify(userObj));
-    return true;
+    return userObj;
   }, []);
 
   const logout = useCallback(() => {
